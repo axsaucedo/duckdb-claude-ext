@@ -1,101 +1,80 @@
-# DuckDB C/C++ extension template
-This is an **experimental** template for C/C++ based extensions that link with the **C Extension API** of DuckDB. Note that this
-is different from https://github.com/duckdb/extension-template, which links against the C++ API of DuckDB.
+# Claude Code DuckDB Extension
 
-Features:
-- No DuckDB build required
-- CI/CD chain preconfigured
-- (Coming soon) Works with community extensions
+A DuckDB extension for parsing and querying Claude Code data directories.
 
-## Cloning
-Clone the repo with submodules
+## Overview
 
-```shell
-git clone --recurse-submodules <repo>
-```
+This extension provides table functions to query data from Claude Code data directories (typically `~/.claude`), including:
 
-## Dependencies
-In principle, compiling this template only requires a C/C++ toolchain. However, this template relies on some additional
-tooling to make life a little easier and to be able to share CI/CD infrastructure with extension templates for other languages:
-
-- Python3
-- Python3-venv
-- [Make](https://www.gnu.org/software/make)
-- CMake
-- Git
-- (Optional) Ninja + ccache
-
-Installing these dependencies will vary per platform:
-- For Linux, these come generally pre-installed or are available through the distro-specific package manager.
-- For MacOS, [homebrew](https://formulae.brew.sh/).
-- For Windows, [chocolatey](https://community.chocolatey.org/).
+- **Conversations** - JSONL message logs from projects/
+- **Plans** - Markdown plan files from plans/
+- **Todos** - JSON todo files from todos/
+- **History** - Global command history from history.jsonl
+- **Stats** - Daily usage statistics from stats-cache.json
 
 ## Building
-After installing the dependencies, building is a two-step process. Firstly run:
-```shell
-make configure
+
+### Prerequisites
+- Python3 + venv
+- CMake
+- Make
+- Git
+- DuckDB v1.4.4+
+
+### Build Steps
+
+```bash
+# Clone extension-ci-tools
+git clone --depth 1 -b v1.4.4 https://github.com/duckdb/extension-ci-tools extension-ci-tools
+
+# Build release
+make release
+
+# The extension will be at build/release/claude_code.duckdb_extension
 ```
-This will ensure a Python venv is set up with DuckDB and DuckDB's test runner installed. Additionally, depending on configuration,
-DuckDB will be used to determine the correct platform for which you are compiling.
 
-Then, to build the extension run:
-```shell
-make debug
-```
-This delegates the build process to cargo, which will produce a shared library in `target/debug/<shared_lib_name>`. After this step, 
-a script is run to transform the shared library into a loadable extension by appending a binary footer. The resulting extension is written
-to the `build/debug` directory.
+## Usage
 
-To create optimized release binaries, simply run `make release` instead.
+```sql
+-- Load extension (requires unsigned flag for custom builds)
+LOAD '/path/to/claude_code.duckdb_extension';
 
-### Faster builds
-We recommend to install Ninja and Ccache for building as this can have a significant speed boost during development. After installing, ninja can be used 
-by running:
-```shell
-make clean
-GEN=ninja make debug
+-- Query conversations
+SELECT session_id, type, message_content 
+FROM read_claude_conversations('~/.claude') 
+LIMIT 10;
+
+-- Query plans
+SELECT plan_name, content 
+FROM read_claude_plans('~/.claude');
+
+-- Query todos
+SELECT session_id, content, status 
+FROM read_claude_todos('~/.claude');
+
+-- Query history
+SELECT display, timestamp_ms, project 
+FROM read_claude_history('~/.claude');
+
+-- Query stats
+SELECT date, message_count, session_count 
+FROM read_claude_stats('~/.claude');
 ```
 
 ## Testing
-This extension uses the DuckDB Python client for testing. This should be automatically installed in the `make configure` step.
-The tests themselves are written in the SQLLogicTest format, just like most of DuckDB's tests. A sample test can be found in
-`test/sql/<extension_name>.test`. To run the tests using the *debug* build:
 
-```shell
-make test_debug
-```
-
-or for the *release* build:
-```shell
+```bash
+# Run all tests
 make test_release
 ```
 
-### Version switching
-Testing with different DuckDB versions is really simple:
+## Technical Notes
 
-First, run 
-```
-make clean_all
-```
-to ensure the previous `make configure` step is deleted.
+- Built using DuckDB C Extension API (more stable than C++ API)
+- Uses C_STRUCT_UNSTABLE ABI for v1.4.4 compatibility
+- Includes cJSON library for JSON parsing
+- Designed for macOS ARM64 (Apple Silicon)
 
-Then, run 
-```
-DUCKDB_TEST_VERSION=v1.1.2 make configure
-```
-to select a different duckdb version to test with
+## License
 
-Finally, build and test with 
-```
-make debug
-make test_debug
-```
-
-### Using unstable Extension C API functionality
-The DuckDB Extension C API has a stable part and an unstable part. By default, this template only allows usage of the stable
-part of the API. To switch it to allow using the unstable part, take the following steps:
-
-Firstly, set your `TARGET_DUCKDB_VERSION` to your desired in `./Makefile`. Then, run `make update_duckdb_headers` to ensure 
-the headers in `./duckdb_capi` are set to the correct version. (FIXME: this is not yet working properly). 
-
-Finally, set `USE_UNSTABLE_C_API` to 1 in `./Makefile`. That's all!
+MIT

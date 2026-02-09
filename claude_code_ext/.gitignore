@@ -5,3 +5,5 @@ configure
 duckdb_unittest_tempdir
 /test/bin
 venv
+extension-ci-tools
+tmp_duckdb*
