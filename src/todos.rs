@@ -12,6 +12,7 @@ use std::sync::Mutex;
 struct TodoRow {
     session_id: String,
     agent_id: String,
+    file_name: String,
     item_index: i64,
     content: String,
     status: String,
@@ -37,6 +38,11 @@ impl ReadTodosVTab {
         let mut rows = Vec::new();
 
         for (session_id, agent_id, file_path) in files {
+            let fname = file_path
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+
             let content = match std::fs::read_to_string(&file_path) {
                 Ok(c) => c,
                 Err(_) => continue,
@@ -44,13 +50,26 @@ impl ReadTodosVTab {
 
             let items: Vec<TodoItem> = match serde_json::from_str(&content) {
                 Ok(items) => items,
-                Err(_) => continue,
+                Err(e) => {
+                    // Emit parse error row instead of silently dropping
+                    rows.push(TodoRow {
+                        session_id: session_id.clone(),
+                        agent_id: agent_id.clone(),
+                        file_name: fname,
+                        item_index: -1,
+                        content: format!("Parse error: {}", e),
+                        status: "_parse_error".to_string(),
+                        active_form: None,
+                    });
+                    continue;
+                }
             };
 
             for (idx, item) in items.into_iter().enumerate() {
                 rows.push(TodoRow {
                     session_id: session_id.clone(),
                     agent_id: agent_id.clone(),
+                    file_name: fname.clone(),
                     item_index: idx as i64,
                     content: item.content.unwrap_or_default(),
                     status: item.status.unwrap_or_default(),
@@ -73,6 +92,10 @@ impl VTab for ReadTodosVTab {
         );
         bind.add_result_column(
             "agent_id",
+            LogicalTypeHandle::from(LogicalTypeId::Varchar),
+        );
+        bind.add_result_column(
+            "file_name",
             LogicalTypeHandle::from(LogicalTypeId::Varchar),
         );
         bind.add_result_column(
@@ -133,18 +156,21 @@ impl VTab for ReadTodosVTab {
             v1.insert(i, CString::new(row.agent_id.as_str()).unwrap_or_default());
 
             let mut v2 = output.flat_vector(2);
-            v2.as_mut_slice::<i64>()[i] = row.item_index;
+            v2.insert(i, CString::new(row.file_name.as_str()).unwrap_or_default());
 
             let mut v3 = output.flat_vector(3);
-            v3.insert(i, CString::new(row.content.as_str()).unwrap_or_default());
+            v3.as_mut_slice::<i64>()[i] = row.item_index;
 
             let mut v4 = output.flat_vector(4);
-            v4.insert(i, CString::new(row.status.as_str()).unwrap_or_default());
+            v4.insert(i, CString::new(row.content.as_str()).unwrap_or_default());
 
             let mut v5 = output.flat_vector(5);
+            v5.insert(i, CString::new(row.status.as_str()).unwrap_or_default());
+
+            let mut v6 = output.flat_vector(6);
             match &row.active_form {
-                Some(af) => v5.insert(i, CString::new(af.as_str()).unwrap_or_default()),
-                None => v5.set_null(i),
+                Some(af) => v6.insert(i, CString::new(af.as_str()).unwrap_or_default()),
+                None => v6.set_null(i),
             }
         }
 

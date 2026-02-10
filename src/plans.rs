@@ -10,6 +10,7 @@ use std::sync::Mutex;
 
 struct PlanRow {
     plan_name: String,
+    file_name: String,
     file_path: String,
     content: String,
     file_size: i64,
@@ -48,8 +49,14 @@ impl ReadPlansVTab {
                 .map(|m| m.len() as i64)
                 .unwrap_or(0);
 
+            let file_name = file_path
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+
             rows.push(PlanRow {
                 plan_name,
+                file_name,
                 file_path: file_path.to_string_lossy().to_string(),
                 content,
                 file_size,
@@ -66,6 +73,10 @@ impl VTab for ReadPlansVTab {
     fn bind(bind: &BindInfo) -> Result<Self::BindData, Box<dyn std::error::Error>> {
         bind.add_result_column(
             "plan_name",
+            LogicalTypeHandle::from(LogicalTypeId::Varchar),
+        );
+        bind.add_result_column(
+            "file_name",
             LogicalTypeHandle::from(LogicalTypeId::Varchar),
         );
         bind.add_result_column(
@@ -122,13 +133,16 @@ impl VTab for ReadPlansVTab {
             vec0.insert(i, CString::new(row.plan_name.as_str()).unwrap_or_default());
 
             let vec1 = output.flat_vector(1);
-            vec1.insert(i, CString::new(row.file_path.as_str()).unwrap_or_default());
+            vec1.insert(i, CString::new(row.file_name.as_str()).unwrap_or_default());
 
             let vec2 = output.flat_vector(2);
-            vec2.insert(i, CString::new(row.content.as_str()).unwrap_or_default());
+            vec2.insert(i, CString::new(row.file_path.as_str()).unwrap_or_default());
 
-            let mut vec3 = output.flat_vector(3);
-            vec3.as_mut_slice::<i64>()[i] = row.file_size;
+            let vec3 = output.flat_vector(3);
+            vec3.insert(i, CString::new(row.content.as_str()).unwrap_or_default());
+
+            let mut vec4 = output.flat_vector(4);
+            vec4.as_mut_slice::<i64>()[i] = row.file_size;
         }
 
         output.set_len(batch_size);

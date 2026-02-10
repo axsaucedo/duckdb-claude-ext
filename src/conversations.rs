@@ -14,6 +14,7 @@ use std::sync::Mutex;
 struct ConversationRow {
     session_id: String,
     project_path: String,
+    project_dir: String,
     file_name: String,
     is_agent: bool,
     line_number: i64,
@@ -55,15 +56,12 @@ impl ReadConversationsVTab {
         let base_path = utils::resolve_claude_path(path);
         let files = utils::discover_conversation_files(&base_path);
         let mut rows = Vec::new();
-        let mut global_line: i64 = 0;
-
-        for (project_path, is_agent, file_path) in &files {
+        for (project_dir, is_agent, file_path) in &files {
             let file_name = file_path
                 .file_name()
                 .map(|f| f.to_string_lossy().to_string())
                 .unwrap_or_default();
 
-            // Derive session_id from the JSONL messages or filename
             let file_session_id = utils::extract_session_id_from_filename(&file_name);
 
             let file = match std::fs::File::open(file_path) {
@@ -71,9 +69,12 @@ impl ReadConversationsVTab {
                 Err(_) => continue,
             };
             let reader = BufReader::new(file);
+            let mut file_line: i64 = 0;
+            let mut file_rows_start = rows.len();
+            let mut file_cwd: Option<String> = None;
 
             for line_result in reader.lines() {
-                global_line += 1;
+                file_line += 1;
                 let line = match line_result {
                     Ok(l) => l,
                     Err(_) => continue,
@@ -86,22 +87,25 @@ impl ReadConversationsVTab {
                     Ok(msg) => {
                         let row = Self::message_to_row(
                             msg,
-                            project_path,
+                            project_dir,
                             &file_name,
                             *is_agent,
                             &file_session_id,
-                            global_line,
+                            file_line,
                         );
+                        if file_cwd.is_none() && row.cwd.is_some() {
+                            file_cwd = row.cwd.clone();
+                        }
                         rows.push(row);
                     }
                     Err(e) => {
-                        // Parse failure: emit error row rather than silently dropping
                         rows.push(ConversationRow {
                             session_id: file_session_id.clone(),
-                            project_path: project_path.clone(),
+                            project_path: utils::decode_project_path(project_dir),
+                            project_dir: project_dir.clone(),
                             file_name: file_name.clone(),
                             is_agent: *is_agent,
-                            line_number: global_line,
+                            line_number: file_line,
                             message_type: "_parse_error".to_string(),
                             uuid: None,
                             parent_uuid: None,
@@ -125,6 +129,16 @@ impl ReadConversationsVTab {
                     }
                 }
             }
+
+            // Backfill project_path for rows without cwd (summary, file-history-snapshot, etc.)
+            if let Some(ref cwd) = file_cwd {
+                let fallback = utils::decode_project_path(project_dir);
+                for row in &mut rows[file_rows_start..] {
+                    if row.project_path == fallback {
+                        row.project_path = cwd.clone();
+                    }
+                }
+            }
         }
 
         rows
@@ -132,12 +146,13 @@ impl ReadConversationsVTab {
 
     fn message_to_row(
         msg: ConversationMessage,
-        project_path: &str,
+        project_dir: &str,
         file_name: &str,
         is_agent: bool,
         file_session_id: &str,
         line_number: i64,
     ) -> ConversationRow {
+        let fallback_project_path = utils::decode_project_path(project_dir);
         match msg {
             ConversationMessage::User(u) => {
                 let content = u
@@ -150,9 +165,11 @@ impl ReadConversationsVTab {
                     .session_id
                     .clone()
                     .unwrap_or_else(|| file_session_id.to_string());
+                let project_path = u.base.cwd.clone().unwrap_or_else(|| fallback_project_path.clone());
                 ConversationRow {
                     session_id,
-                    project_path: project_path.to_string(),
+                    project_path,
+                    project_dir: project_dir.to_string(),
                     file_name: file_name.to_string(),
                     is_agent,
                     line_number,
@@ -184,6 +201,7 @@ impl ReadConversationsVTab {
                     .session_id
                     .clone()
                     .unwrap_or_else(|| file_session_id.to_string());
+                let project_path = a.base.cwd.clone().unwrap_or_else(|| fallback_project_path.clone());
 
                 // Extract text content from content blocks
                 let text_content = msg_content
@@ -217,7 +235,8 @@ impl ReadConversationsVTab {
 
                 ConversationRow {
                     session_id,
-                    project_path: project_path.to_string(),
+                    project_path,
+                    project_dir: project_dir.to_string(),
                     file_name: file_name.to_string(),
                     is_agent,
                     line_number,
@@ -249,9 +268,11 @@ impl ReadConversationsVTab {
                     .clone()
                     .unwrap_or_else(|| file_session_id.to_string());
                 let content = s.content.as_ref().map(utils::extract_text_content);
+                let project_path = s.base.cwd.clone().unwrap_or_else(|| fallback_project_path.clone());
                 ConversationRow {
                     session_id,
-                    project_path: project_path.to_string(),
+                    project_path,
+                    project_dir: project_dir.to_string(),
                     file_name: file_name.to_string(),
                     is_agent,
                     line_number,
@@ -278,7 +299,8 @@ impl ReadConversationsVTab {
             }
             ConversationMessage::Summary(s) => ConversationRow {
                 session_id: file_session_id.to_string(),
-                project_path: project_path.to_string(),
+                project_path: fallback_project_path.clone(),
+                project_dir: project_dir.to_string(),
                 file_name: file_name.to_string(),
                 is_agent,
                 line_number,
@@ -304,7 +326,8 @@ impl ReadConversationsVTab {
             },
             ConversationMessage::FileHistorySnapshot(_) => ConversationRow {
                 session_id: file_session_id.to_string(),
-                project_path: project_path.to_string(),
+                project_path: fallback_project_path.clone(),
+                project_dir: project_dir.to_string(),
                 file_name: file_name.to_string(),
                 is_agent,
                 line_number,
@@ -333,7 +356,8 @@ impl ReadConversationsVTab {
                     .session_id
                     .clone()
                     .unwrap_or_else(|| file_session_id.to_string()),
-                project_path: project_path.to_string(),
+                project_path: fallback_project_path.clone(),
+                project_dir: project_dir.to_string(),
                 file_name: file_name.to_string(),
                 is_agent,
                 line_number,
@@ -370,6 +394,7 @@ impl VTab for ReadConversationsVTab {
         let cols = [
             "session_id",
             "project_path",
+            "project_dir",
             "file_name",
             "is_agent",
             "line_number",
@@ -451,54 +476,31 @@ impl VTab for ReadConversationsVTab {
             let row = &rows[offset + i];
             let idx = i;
 
-            // session_id
             set_varchar(output, 0, idx, &row.session_id);
-            // project_path
             set_varchar(output, 1, idx, &row.project_path);
-            // file_name
-            set_varchar(output, 2, idx, &row.file_name);
-            // is_agent
-            set_bool(output, 3, idx, row.is_agent);
-            // line_number
-            set_i64(output, 4, idx, row.line_number);
-            // message_type
-            set_varchar(output, 5, idx, &row.message_type);
-            // uuid
-            set_varchar_opt(output, 6, idx, row.uuid.as_deref());
-            // parent_uuid
-            set_varchar_opt(output, 7, idx, row.parent_uuid.as_deref());
-            // timestamp
-            set_varchar_opt(output, 8, idx, row.timestamp.as_deref());
-            // message_role
-            set_varchar_opt(output, 9, idx, row.message_role.as_deref());
-            // message_content
-            set_varchar_opt(output, 10, idx, row.message_content.as_deref());
-            // model
-            set_varchar_opt(output, 11, idx, row.model.as_deref());
-            // tool_name
-            set_varchar_opt(output, 12, idx, row.tool_name.as_deref());
-            // tool_use_id
-            set_varchar_opt(output, 13, idx, row.tool_use_id.as_deref());
-            // tool_input
-            set_varchar_opt(output, 14, idx, row.tool_input.as_deref());
-            // input_tokens
-            set_i64_opt(output, 15, idx, row.input_tokens);
-            // output_tokens
-            set_i64_opt(output, 16, idx, row.output_tokens);
-            // cache_creation_tokens
-            set_i64_opt(output, 17, idx, row.cache_creation_tokens);
-            // cache_read_tokens
-            set_i64_opt(output, 18, idx, row.cache_read_tokens);
-            // slug
-            set_varchar_opt(output, 19, idx, row.slug.as_deref());
-            // git_branch
-            set_varchar_opt(output, 20, idx, row.git_branch.as_deref());
-            // cwd
-            set_varchar_opt(output, 21, idx, row.cwd.as_deref());
-            // version
-            set_varchar_opt(output, 22, idx, row.version.as_deref());
-            // stop_reason
-            set_varchar_opt(output, 23, idx, row.stop_reason.as_deref());
+            set_varchar(output, 2, idx, &row.project_dir);
+            set_varchar(output, 3, idx, &row.file_name);
+            set_bool(output, 4, idx, row.is_agent);
+            set_i64(output, 5, idx, row.line_number);
+            set_varchar(output, 6, idx, &row.message_type);
+            set_varchar_opt(output, 7, idx, row.uuid.as_deref());
+            set_varchar_opt(output, 8, idx, row.parent_uuid.as_deref());
+            set_varchar_opt(output, 9, idx, row.timestamp.as_deref());
+            set_varchar_opt(output, 10, idx, row.message_role.as_deref());
+            set_varchar_opt(output, 11, idx, row.message_content.as_deref());
+            set_varchar_opt(output, 12, idx, row.model.as_deref());
+            set_varchar_opt(output, 13, idx, row.tool_name.as_deref());
+            set_varchar_opt(output, 14, idx, row.tool_use_id.as_deref());
+            set_varchar_opt(output, 15, idx, row.tool_input.as_deref());
+            set_i64_opt(output, 16, idx, row.input_tokens);
+            set_i64_opt(output, 17, idx, row.output_tokens);
+            set_i64_opt(output, 18, idx, row.cache_creation_tokens);
+            set_i64_opt(output, 19, idx, row.cache_read_tokens);
+            set_varchar_opt(output, 20, idx, row.slug.as_deref());
+            set_varchar_opt(output, 21, idx, row.git_branch.as_deref());
+            set_varchar_opt(output, 22, idx, row.cwd.as_deref());
+            set_varchar_opt(output, 23, idx, row.version.as_deref());
+            set_varchar_opt(output, 24, idx, row.stop_reason.as_deref());
         }
 
         output.set_len(batch_size);

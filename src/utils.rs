@@ -28,7 +28,8 @@ fn expand_tilde(path: &str) -> PathBuf {
 }
 
 /// Discover all JSONL conversation files under projects/ directory.
-/// Returns (project_path_decoded, is_agent, file_path) tuples sorted deterministically.
+/// Returns (project_dir_encoded, is_agent, file_path) tuples sorted deterministically.
+/// project_dir_encoded is the raw folder name (e.g., "-Users-testuser-project-alpha").
 pub fn discover_conversation_files(base_path: &Path) -> Vec<(String, bool, PathBuf)> {
     let projects_dir = base_path.join("projects");
     let mut results = Vec::new();
@@ -47,7 +48,6 @@ pub fn discover_conversation_files(base_path: &Path) -> Vec<(String, bool, PathB
 
     for project_entry in project_dirs {
         let project_encoded = project_entry.file_name().to_string_lossy().to_string();
-        let project_decoded = decode_project_path(&project_encoded);
 
         let mut jsonl_files: Vec<_> = std::fs::read_dir(project_entry.path())
             .into_iter()
@@ -64,7 +64,7 @@ pub fn discover_conversation_files(base_path: &Path) -> Vec<(String, bool, PathB
         for file_entry in jsonl_files {
             let fname = file_entry.file_name().to_string_lossy().to_string();
             let is_agent = fname.starts_with("agent-");
-            results.push((project_decoded.clone(), is_agent, file_entry.path()));
+            results.push((project_encoded.clone(), is_agent, file_entry.path()));
         }
     }
 
