@@ -1,74 +1,54 @@
--- Test: read_claude_conversations basic functionality
--- This file tests the conversations table function
+-- Test: read_conversations correctness and invariants
+-- All assertions use WHERE NOT ... to produce 0 rows on success
 
--- Test 1: Basic query - should return all messages
-SELECT COUNT(*) as total_messages 
-FROM read_claude_conversations('test/data');
+-- Test 1: Expected row count
+SELECT CASE WHEN cnt = 180 THEN 'PASS' ELSE 'FAIL: expected 180 got ' || cnt END AS test_conversations_count
+FROM (SELECT COUNT(*) AS cnt FROM read_conversations(path='test/data'));
 
--- Test 2: Filter by message role
-SELECT message_role, COUNT(*) as count 
-FROM read_claude_conversations('test/data')
-WHERE message_role IS NOT NULL
-GROUP BY message_role
-ORDER BY count DESC;
+-- Test 2: All line numbers are per-file (start at 1)
+SELECT CASE WHEN min_ln = 1 THEN 'PASS' ELSE 'FAIL: min line not 1 for ' || file_name END AS test_line_numbers_start_at_1
+FROM (SELECT file_name, MIN(line_number) AS min_ln FROM read_conversations(path='test/data') GROUP BY file_name)
+WHERE min_ln != 1;
 
--- Test 3: Get messages for a specific session
-SELECT session_id, uuid, type, timestamp
-FROM read_claude_conversations('test/data')
-WHERE session_id IS NOT NULL
-LIMIT 10;
+-- Test 3: project_path matches history.project (no lossy decode artifacts)
+SELECT CASE WHEN cnt = 0 THEN 'PASS' ELSE 'FAIL: ' || cnt || ' rows with slash-decoded paths' END AS test_no_lossy_paths
+FROM (SELECT COUNT(*) AS cnt FROM read_conversations(path='test/data') WHERE project_path LIKE '%/project/%');
 
--- Test 4: Get user messages with content
-SELECT session_id, timestamp, message_content
-FROM read_claude_conversations('test/data')
-WHERE message_role = 'user'
-LIMIT 5;
+-- Test 4: session_id is never NULL
+SELECT CASE WHEN cnt = 0 THEN 'PASS' ELSE 'FAIL: ' || cnt || ' NULL session_ids' END AS test_session_id_not_null
+FROM (SELECT COUNT(*) AS cnt FROM read_conversations(path='test/data') WHERE session_id IS NULL);
 
--- Test 5: Get assistant messages with tool usage
-SELECT session_id, timestamp, tool_name, tool_input
-FROM read_claude_conversations('test/data')
-WHERE message_role = 'assistant' 
-  AND tool_name IS NOT NULL
-LIMIT 5;
+-- Test 5: project_dir is always the raw encoded folder name
+SELECT CASE WHEN cnt > 0 THEN 'PASS' ELSE 'FAIL: no project_dir values' END AS test_project_dir_present
+FROM (SELECT COUNT(DISTINCT project_dir) AS cnt FROM read_conversations(path='test/data'));
 
--- Test 6: Get messages by project
-SELECT project, COUNT(*) as message_count
-FROM read_claude_conversations('test/data')
-GROUP BY project
-ORDER BY message_count DESC;
+-- Test 6: 3 distinct projects
+SELECT CASE WHEN cnt = 3 THEN 'PASS' ELSE 'FAIL: expected 3 projects got ' || cnt END AS test_project_count
+FROM (SELECT COUNT(DISTINCT project_path) AS cnt FROM read_conversations(path='test/data'));
 
--- Test 7: Get message threading (parent-child relationships)
-SELECT 
-    c1.uuid,
-    c1.type,
-    c2.uuid as parent_uuid_match,
-    c2.type as parent_type
-FROM read_claude_conversations('test/data') c1
-LEFT JOIN read_claude_conversations('test/data') c2 
-    ON c1.parent_uuid = c2.uuid
-WHERE c1.parent_uuid IS NOT NULL
-LIMIT 10;
+-- Test 7: Message types include user and assistant
+SELECT CASE WHEN cnt >= 2 THEN 'PASS' ELSE 'FAIL: missing message types' END AS test_message_types
+FROM (SELECT COUNT(DISTINCT message_type) AS cnt FROM read_conversations(path='test/data') WHERE message_type IN ('user', 'assistant'));
 
--- Test 8: Tool usage statistics
-SELECT 
-    session_id,
-    tool_name,
-    COUNT(*) as usage_count
-FROM read_claude_conversations('test/data')
-WHERE tool_name IS NOT NULL
-GROUP BY session_id, tool_name
-ORDER BY usage_count DESC
-LIMIT 10;
+-- Test 8: Agent files detected
+SELECT CASE WHEN cnt > 0 THEN 'PASS' ELSE 'FAIL: no agent files' END AS test_agent_detection
+FROM (SELECT COUNT(*) AS cnt FROM read_conversations(path='test/data') WHERE is_agent = true);
 
--- Test 9: Messages ordered by timestamp
-SELECT type, timestamp, message_content
-FROM read_claude_conversations('test/data')
-WHERE type IN ('user', 'assistant')
-ORDER BY timestamp
-LIMIT 10;
+-- Test 9: UUID format validation (user/assistant messages have valid UUIDs)
+SELECT CASE WHEN cnt = 0 THEN 'PASS' ELSE 'FAIL: ' || cnt || ' invalid UUIDs' END AS test_uuid_format
+FROM (SELECT COUNT(*) AS cnt FROM read_conversations(path='test/data')
+      WHERE message_type IN ('user', 'assistant')
+      AND uuid IS NOT NULL
+      AND uuid NOT SIMILAR TO '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}');
 
--- Test 10: Get agent messages (sub-agent conversations)
-SELECT session_id, uuid, timestamp
-FROM read_claude_conversations('test/data')
-WHERE is_agent = TRUE
-LIMIT 5;
+-- Test 10: No parse errors in test data
+SELECT CASE WHEN cnt = 0 THEN 'PASS' ELSE 'FAIL: ' || cnt || ' parse errors' END AS test_no_parse_errors
+FROM (SELECT COUNT(*) AS cnt FROM read_conversations(path='test/data') WHERE message_type = '_parse_error');
+
+-- Test 11: Slug column populated for user/assistant
+SELECT CASE WHEN cnt > 0 THEN 'PASS' ELSE 'FAIL: no slugs found' END AS test_slugs_present
+FROM (SELECT COUNT(*) AS cnt FROM read_conversations(path='test/data') WHERE slug IS NOT NULL);
+
+-- Test 12: 12 distinct files (6 main + 6 agent)
+SELECT CASE WHEN cnt = 12 THEN 'PASS' ELSE 'FAIL: expected 12 files got ' || cnt END AS test_file_count
+FROM (SELECT COUNT(DISTINCT file_name) AS cnt FROM read_conversations(path='test/data'));

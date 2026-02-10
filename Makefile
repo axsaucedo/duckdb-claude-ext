@@ -22,8 +22,10 @@ debug: build_extension_library_debug build_extension_with_metadata_debug
 release: build_extension_library_release build_extension_with_metadata_release
 
 test: test_debug
-test_debug: test_extension_debug
-test_release: test_extension_release
+test_debug: debug
+	bash scripts/test.sh
+test_release: release
+	bash scripts/test.sh
 
 clean: clean_build clean_rust
 clean_all: clean_configure clean
