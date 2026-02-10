@@ -1,7 +1,12 @@
 [project]
 name = "agentic-copilot"
 version = "0.1.0"
-description = "Add your description here"
+description = "agent_data DuckDB extension for reading Claude Code session data"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "marimo>=0.19",
+    "duckdb>=1.4",
+    "pandas>=2.0",
+    "numpy>=2.0",
+]
