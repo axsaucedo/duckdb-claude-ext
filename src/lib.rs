@@ -5,23 +5,23 @@ mod stats;
 mod todos;
 mod types;
 mod utils;
+mod vtab;
 
 use duckdb::{duckdb_entrypoint_c_api, Connection, Result};
 use std::error::Error;
-
-const EXTENSION_NAME: &str = "agent_data";
+use vtab::GenericVTab;
 
 #[duckdb_entrypoint_c_api()]
 pub unsafe fn extension_entrypoint(con: Connection) -> Result<(), Box<dyn Error>> {
-    con.register_table_function::<conversations::ReadConversationsVTab>("read_conversations")
+    con.register_table_function::<GenericVTab<conversations::Conversations>>("read_conversations")
         .expect("Failed to register read_conversations");
-    con.register_table_function::<plans::ReadPlansVTab>("read_plans")
+    con.register_table_function::<GenericVTab<plans::Plans>>("read_plans")
         .expect("Failed to register read_plans");
-    con.register_table_function::<todos::ReadTodosVTab>("read_todos")
+    con.register_table_function::<GenericVTab<todos::Todos>>("read_todos")
         .expect("Failed to register read_todos");
-    con.register_table_function::<history::ReadHistoryVTab>("read_history")
+    con.register_table_function::<GenericVTab<history::History>>("read_history")
         .expect("Failed to register read_history");
-    con.register_table_function::<stats::ReadStatsVTab>("read_stats")
+    con.register_table_function::<GenericVTab<stats::Stats>>("read_stats")
         .expect("Failed to register read_stats");
     Ok(())
 }

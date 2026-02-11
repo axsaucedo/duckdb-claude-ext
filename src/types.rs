@@ -12,7 +12,7 @@ pub enum ConversationMessage {
     #[serde(rename = "system")]
     System(SystemMessage),
     #[serde(rename = "file-history-snapshot")]
-    FileHistorySnapshot(FileHistorySnapshotMessage),
+    FileHistorySnapshot {},
     #[serde(rename = "queue-operation")]
     QueueOperation(QueueOperationMessage),
     #[serde(rename = "summary")]
@@ -33,12 +33,6 @@ pub struct BaseFields {
     pub slug: Option<String>,
     #[serde(rename = "gitBranch")]
     pub git_branch: Option<String>,
-    #[serde(rename = "userType")]
-    pub user_type: Option<String>,
-    #[serde(rename = "isSidechain")]
-    pub is_sidechain: Option<bool>,
-    #[serde(rename = "agentId")]
-    pub agent_id: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -50,7 +44,6 @@ pub struct UserMessage {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct UserMessageContent {
-    pub role: Option<String>,
     pub content: Option<serde_json::Value>,
 }
 
@@ -64,8 +57,6 @@ pub struct AssistantMessage {
 #[derive(Deserialize, Debug, Clone)]
 pub struct AssistantMessageContent {
     pub model: Option<String>,
-    pub id: Option<String>,
-    pub role: Option<String>,
     pub content: Option<Vec<ContentBlock>>,
     pub stop_reason: Option<String>,
     pub usage: Option<UsageInfo>,
@@ -77,10 +68,7 @@ pub enum ContentBlock {
     #[serde(rename = "text")]
     Text { text: String },
     #[serde(rename = "thinking")]
-    Thinking {
-        thinking: String,
-        signature: Option<String>,
-    },
+    Thinking {},
     #[serde(rename = "tool_use")]
     ToolUse {
         id: Option<String>,
@@ -88,11 +76,7 @@ pub enum ContentBlock {
         input: Option<serde_json::Value>,
     },
     #[serde(rename = "tool_result")]
-    ToolResult {
-        tool_use_id: Option<String>,
-        content: Option<serde_json::Value>,
-        is_error: Option<bool>,
-    },
+    ToolResult {},
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -107,22 +91,11 @@ pub struct UsageInfo {
 pub struct SystemMessage {
     #[serde(flatten)]
     pub base: BaseFields,
-    pub subtype: Option<String>,
     pub content: Option<serde_json::Value>,
-    pub level: Option<String>,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub struct FileHistorySnapshotMessage {
-    #[serde(rename = "messageId")]
-    pub message_id: Option<String>,
-    #[serde(rename = "isSnapshotUpdate")]
-    pub is_snapshot_update: Option<bool>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct QueueOperationMessage {
-    pub operation: Option<String>,
     pub timestamp: Option<String>,
     #[serde(rename = "sessionId")]
     pub session_id: Option<String>,
@@ -132,8 +105,6 @@ pub struct QueueOperationMessage {
 #[derive(Deserialize, Debug, Clone)]
 pub struct SummaryMessage {
     pub summary: Option<String>,
-    #[serde(rename = "leafUuid")]
-    pub leaf_uuid: Option<String>,
 }
 
 // ─── History (JSONL) ───
@@ -163,9 +134,6 @@ pub struct TodoItem {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct StatsCache {
-    pub version: Option<i64>,
-    #[serde(rename = "lastComputedDate")]
-    pub last_computed_date: Option<String>,
     #[serde(rename = "dailyActivity")]
     pub daily_activity: Option<Vec<DailyStats>>,
 }
