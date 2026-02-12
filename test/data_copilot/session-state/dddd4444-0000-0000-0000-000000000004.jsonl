@@ -1,0 +1,5 @@
+{"id":"evt-dddd-0001","parentId":null,"sessionId":"dddd4444-0000-0000-0000-000000000004","type":"session.start","timestamp":"2026-01-15T16:00:00.000Z","context":{"cwd":"/Users/testuser/project-gamma","gitRoot":"/Users/testuser/project-gamma","branch":"main","repository":"testuser/project-gamma","copilotVersion":"0.0.400"}}
+{"id":"evt-dddd-0002","parentId":"evt-dddd-0001","sessionId":"dddd4444-0000-0000-0000-000000000004","type":"user.message","timestamp":"2026-01-15T16:01:00.000Z","content":"Set up the project scaffold"}
+{"id":"evt-dddd-0003","parentId":"evt-dddd-0002","sessionId":"dddd4444-0000-0000-0000-000000000004","type":"assistant.turn_start","timestamp":"2026-01-15T16:02:00.000Z","turnId":"0"}
+{"id":"evt-dddd-0004","parentId":"evt-dddd-0003","sessionId":"dddd4444-0000-0000-0000-000000000004","type":"assistant.message","timestamp":"2026-01-15T16:03:00.000Z","content":"I'll set up the project scaffold with a standard directory structure and configuration files."}
+{"id":"evt-dddd-0005","parentId":"evt-dddd-0004","sessionId":"dddd4444-0000-0000-0000-000000000004","type":"assistant.turn_end","timestamp":"2026-01-15T16:04:00.000Z","turnId":"0"}

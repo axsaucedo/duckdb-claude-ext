@@ -1,0 +1,8 @@
+{
+  "model": "claude-sonnet-4",
+  "theme": "auto",
+  "last_logged_in_user": {
+    "host": "https://github.com",
+    "login": "testuser"
+  }
+}

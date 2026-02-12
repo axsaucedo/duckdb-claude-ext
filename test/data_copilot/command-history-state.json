@@ -1,0 +1,9 @@
+{
+  "commandHistory": [
+    "Create a hello world function",
+    "Now add tests",
+    "Run the tests",
+    "Refactor REST endpoints for v2 API",
+    "Fix the failing test"
+  ]
+}
