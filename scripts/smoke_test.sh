@@ -45,7 +45,7 @@ for table, expected_count in expected.items():
 
 # Verify DataFrame columns are accessible (ensures pandas compatibility)
 conv = con.execute(\"SELECT * FROM read_conversations(path='test/data') LIMIT 1\").df()
-required_cols = ['session_id', 'project_path', 'message_type', 'uuid', 'timestamp']
+required_cols = ['source', 'session_id', 'project_path', 'message_type', 'uuid', 'timestamp', 'repository']
 for col in required_cols:
     if col not in conv.columns:
         print(f'FAIL: missing column {col}')

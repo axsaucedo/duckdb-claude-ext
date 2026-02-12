@@ -1,5 +1,5 @@
-{"id":"evt-dddd-0001","parentId":null,"sessionId":"dddd4444-0000-0000-0000-000000000004","type":"session.start","timestamp":"2026-01-15T16:00:00.000Z","context":{"cwd":"/Users/testuser/project-gamma","gitRoot":"/Users/testuser/project-gamma","branch":"main","repository":"testuser/project-gamma","copilotVersion":"0.0.400"}}
-{"id":"evt-dddd-0002","parentId":"evt-dddd-0001","sessionId":"dddd4444-0000-0000-0000-000000000004","type":"user.message","timestamp":"2026-01-15T16:01:00.000Z","content":"Set up the project scaffold"}
-{"id":"evt-dddd-0003","parentId":"evt-dddd-0002","sessionId":"dddd4444-0000-0000-0000-000000000004","type":"assistant.turn_start","timestamp":"2026-01-15T16:02:00.000Z","turnId":"0"}
-{"id":"evt-dddd-0004","parentId":"evt-dddd-0003","sessionId":"dddd4444-0000-0000-0000-000000000004","type":"assistant.message","timestamp":"2026-01-15T16:03:00.000Z","content":"I'll set up the project scaffold with a standard directory structure and configuration files."}
-{"id":"evt-dddd-0005","parentId":"evt-dddd-0004","sessionId":"dddd4444-0000-0000-0000-000000000004","type":"assistant.turn_end","timestamp":"2026-01-15T16:04:00.000Z","turnId":"0"}
+{"type":"session.start","id":"evt-dddd-0001","timestamp":"2026-01-18T08:00:00.000Z","parentId":null,"data":{"sessionId":"dddd4444-0000-0000-0000-000000000004","copilotVersion":"0.0.402","context":{"cwd":"/Users/testuser/quick-fix"}}}
+{"type":"user.message","id":"evt-dddd-0002","timestamp":"2026-01-18T08:00:01.000Z","parentId":"evt-dddd-0001","data":{"content":"Fix the typo in README"}}
+{"type":"assistant.turn_start","id":"evt-dddd-0003","timestamp":"2026-01-18T08:00:02.000Z","parentId":"evt-dddd-0002","data":{"turnId":"turn-1"}}
+{"type":"assistant.message","id":"evt-dddd-0004","timestamp":"2026-01-18T08:00:03.000Z","parentId":"evt-dddd-0003","data":{"messageId":"msg-301","content":"I'll fix the typo in the README file."}}
+{"type":"assistant.turn_end","id":"evt-dddd-0005","timestamp":"2026-01-18T08:00:04.000Z","parentId":"evt-dddd-0004","data":{"turnId":"turn-1"}}
