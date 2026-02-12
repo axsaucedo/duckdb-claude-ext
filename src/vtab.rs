@@ -72,7 +72,7 @@ pub trait TableFunc: Sized + 'static {
     type Row: Send + 'static;
 
     fn columns() -> Vec<ColDef>;
-    fn load_rows(path: Option<&str>) -> Vec<Self::Row>;
+    fn load_rows(path: Option<&str>, source: Option<&str>) -> Vec<Self::Row>;
     fn write_row(output: &mut DataChunkHandle, idx: usize, row: &Self::Row);
 }
 
@@ -100,6 +100,11 @@ fn resolve_path(bind: &BindInfo) -> Option<String> {
     named.or(positional)
 }
 
+/// Resolve the optional `source` named parameter from bind info.
+pub fn resolve_source(bind: &BindInfo) -> Option<String> {
+    bind.get_named_parameter("source").map(|v| v.to_string())
+}
+
 impl<T: TableFunc> VTab for GenericVTab<T> {
     type InitData = GenericInitData;
     type BindData = GenericBindData<T::Row>;
@@ -115,7 +120,8 @@ impl<T: TableFunc> VTab for GenericVTab<T> {
         }
 
         let path = resolve_path(bind);
-        let rows = T::load_rows(path.as_deref());
+        let source = resolve_source(bind);
+        let rows = T::load_rows(path.as_deref(), source.as_deref());
         Ok(GenericBindData { rows: Mutex::new(rows) })
     }
 
@@ -148,6 +154,9 @@ impl<T: TableFunc> VTab for GenericVTab<T> {
     }
 
     fn named_parameters() -> Option<Vec<(String, LogicalTypeHandle)>> {
-        Some(vec![("path".to_string(), LogicalTypeHandle::from(LogicalTypeId::Varchar))])
+        Some(vec![
+            ("path".to_string(), LogicalTypeHandle::from(LogicalTypeId::Varchar)),
+            ("source".to_string(), LogicalTypeHandle::from(LogicalTypeId::Varchar)),
+        ])
     }
 }

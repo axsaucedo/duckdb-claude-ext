@@ -25,7 +25,7 @@ impl TableFunc for Plans {
         ]
     }
 
-    fn load_rows(path: Option<&str>) -> Vec<PlanRow> {
+    fn load_rows(path: Option<&str>, _source: Option<&str>) -> Vec<PlanRow> {
         let base_path = utils::resolve_claude_path(path);
         let files = utils::discover_plan_files(&base_path);
 

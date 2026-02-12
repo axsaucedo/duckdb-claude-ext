@@ -166,7 +166,7 @@ impl TableFunc for Conversations {
         ]
     }
 
-    fn load_rows(path: Option<&str>) -> Vec<ConversationRow> {
+    fn load_rows(path: Option<&str>, _source: Option<&str>) -> Vec<ConversationRow> {
         let base_path = utils::resolve_claude_path(path);
         let files = utils::discover_conversation_files(&base_path);
         let mut rows = Vec::new();

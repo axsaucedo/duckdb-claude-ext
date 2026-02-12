@@ -24,7 +24,7 @@ impl TableFunc for Stats {
         ]
     }
 
-    fn load_rows(path: Option<&str>) -> Vec<StatsRow> {
+    fn load_rows(path: Option<&str>, _source: Option<&str>) -> Vec<StatsRow> {
         let base_path = utils::resolve_claude_path(path);
         let stats_path = utils::stats_file_path(&base_path);
 

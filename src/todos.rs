@@ -30,7 +30,7 @@ impl TableFunc for Todos {
         ]
     }
 
-    fn load_rows(path: Option<&str>) -> Vec<TodoRow> {
+    fn load_rows(path: Option<&str>, _source: Option<&str>) -> Vec<TodoRow> {
         let base_path = utils::resolve_claude_path(path);
         let files = utils::discover_todo_files(&base_path);
         let mut rows = Vec::new();

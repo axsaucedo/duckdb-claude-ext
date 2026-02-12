@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
-/// Resolve the Claude data directory path.
+/// Resolve a data directory path.
 /// If path is provided, expand ~ and return it.
-/// If no path, default to ~/.claude.
-pub fn resolve_claude_path(path: Option<&str>) -> PathBuf {
+/// If no path, default to ~/.claude (legacy default).
+pub fn resolve_data_path(path: Option<&str>) -> PathBuf {
     match path {
         Some(p) => expand_tilde(p),
         None => {
@@ -11,6 +11,11 @@ pub fn resolve_claude_path(path: Option<&str>) -> PathBuf {
             home.join(".claude")
         }
     }
+}
+
+/// Legacy alias for backward compatibility within modules.
+pub fn resolve_claude_path(path: Option<&str>) -> PathBuf {
+    resolve_data_path(path)
 }
 
 /// Expand ~ at the start of a path to the user's home directory.
@@ -175,4 +180,121 @@ pub fn extract_text_content(value: &serde_json::Value) -> String {
         }
         _ => value.to_string(),
     }
+}
+
+// ─── Copilot Discovery Functions ───
+
+/// Discover all Copilot session event files (events.jsonl) under session-state/.
+/// Returns (session_id, file_path) tuples sorted by session_id.
+pub fn discover_copilot_event_files(base_path: &Path) -> Vec<(String, PathBuf)> {
+    let session_dir = base_path.join("session-state");
+    let mut results = Vec::new();
+
+    if !session_dir.is_dir() {
+        return results;
+    }
+
+    let mut entries: Vec<_> = std::fs::read_dir(&session_dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .collect();
+    entries.sort_by_key(|e| e.file_name());
+
+    for entry in entries {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if entry.path().is_dir() {
+            let events_path = entry.path().join("events.jsonl");
+            if events_path.is_file() {
+                results.push((name, events_path));
+            }
+        } else if name.ends_with(".jsonl") {
+            let session_id = name.strip_suffix(".jsonl").unwrap_or(&name).to_string();
+            results.push((session_id, entry.path()));
+        }
+    }
+    results
+}
+
+/// Discover Copilot plan.md files under session-state/*/.
+/// Returns (session_id, file_path) tuples.
+pub fn discover_copilot_plan_files(base_path: &Path) -> Vec<(String, PathBuf)> {
+    let session_dir = base_path.join("session-state");
+    let mut results = Vec::new();
+
+    if !session_dir.is_dir() {
+        return results;
+    }
+
+    let mut entries: Vec<_> = std::fs::read_dir(&session_dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .collect();
+    entries.sort_by_key(|e| e.file_name());
+
+    for entry in entries {
+        let plan_path = entry.path().join("plan.md");
+        if plan_path.is_file() {
+            let session_id = entry.file_name().to_string_lossy().to_string();
+            results.push((session_id, plan_path));
+        }
+    }
+    results
+}
+
+/// Discover Copilot checkpoint files with markdown checklists.
+/// Returns (session_id, file_name, file_path) tuples.
+pub fn discover_copilot_checkpoint_files(base_path: &Path) -> Vec<(String, String, PathBuf)> {
+    let session_dir = base_path.join("session-state");
+    let mut results = Vec::new();
+
+    if !session_dir.is_dir() {
+        return results;
+    }
+
+    let mut entries: Vec<_> = std::fs::read_dir(&session_dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .collect();
+    entries.sort_by_key(|e| e.file_name());
+
+    for entry in entries {
+        let checkpoints_dir = entry.path().join("checkpoints");
+        if !checkpoints_dir.is_dir() {
+            continue;
+        }
+        let session_id = entry.file_name().to_string_lossy().to_string();
+        let mut md_files: Vec<_> = std::fs::read_dir(&checkpoints_dir)
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                name.ends_with(".md") && name != "index.md"
+            })
+            .collect();
+        md_files.sort_by_key(|e| e.file_name());
+
+        for f in md_files {
+            let fname = f.file_name().to_string_lossy().to_string();
+            results.push((session_id.clone(), fname, f.path()));
+        }
+    }
+    results
+}
+
+/// Get the Copilot command-history-state.json path.
+pub fn copilot_history_file_path(base_path: &Path) -> PathBuf {
+    base_path.join("command-history-state.json")
+}
+
+/// Read workspace.yaml for a session directory to get metadata.
+pub fn read_workspace_yaml(session_dir: &Path) -> Option<crate::types::WorkspaceYaml> {
+    let yaml_path = session_dir.join("workspace.yaml");
+    let content = std::fs::read_to_string(&yaml_path).ok()?;
+    serde_yaml::from_str(&content).ok()
 }

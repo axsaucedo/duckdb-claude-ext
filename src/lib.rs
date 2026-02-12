@@ -1,4 +1,5 @@
 mod conversations;
+mod detect;
 mod history;
 mod plans;
 mod stats;

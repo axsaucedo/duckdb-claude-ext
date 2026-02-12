@@ -29,7 +29,7 @@ impl TableFunc for History {
         ]
     }
 
-    fn load_rows(path: Option<&str>) -> Vec<HistoryRow> {
+    fn load_rows(path: Option<&str>, _source: Option<&str>) -> Vec<HistoryRow> {
         let base_path = utils::resolve_claude_path(path);
         let history_path = utils::history_file_path(&base_path);
 
