@@ -4,8 +4,8 @@
 
 Extended the `agent_data` DuckDB extension from Claude-only to support both Claude Code (`~/.claude`) and GitHub Copilot CLI (`~/.copilot`) data. All 5 table functions now auto-detect the data source and produce unified schemas with a `source` column. The architecture is extensible for future providers (Gemini, Codex, etc.).
 
-**Total commits:** 8 (Tasks 1–8)
-**Test assertions:** 104 SQL + 11 Python smoke test checks (115 total)
+**Total commits:** 8 (Tasks 1–8) + 1 testing overhaul
+**Test assertions:** 199 SQLLogicTest + 11 Python smoke test checks (210 total)
 **Lines changed:** ~1,200 added, ~400 removed across 25 files
 
 ---
@@ -254,24 +254,29 @@ src/
 ```
 
 ### Test Structure
+
+**SQLLogicTest format** (standard DuckDB extension testing, pinned expected values):
 ```
 test/
 ├── data/               # Claude synthetic (180 conversations)
 ├── data_copilot/       # Copilot synthetic (53 events)
 └── sql/
-    ├── test_conversations.sql      # 16 assertions
-    ├── test_copilot_conversations.sql  # 18 assertions
-    ├── test_plans.sql              # 6 assertions
-    ├── test_copilot_plans.sql      # 7 assertions
-    ├── test_todos.sql              # 8 assertions
-    ├── test_copilot_todos.sql      # 9 assertions
-    ├── test_history.sql            # 7 assertions
-    ├── test_copilot_history.sql    # 6 assertions
-    ├── test_stats.sql              # 5 assertions
-    ├── test_joins.sql              # 10 assertions
-    ├── test_cross_source.sql       # 10 assertions
-    └── test_benchmark.sql          # 2 assertions
+    ├── claude_conversations.test       # 34 assertions
+    ├── claude_plans.test               # 11 assertions
+    ├── claude_history.test             # 12 assertions
+    ├── claude_todos.test               # 14 assertions
+    ├── claude_stats.test               # 11 assertions
+    ├── copilot_conversations.test      # 26 assertions
+    ├── copilot_plans.test              # 7 assertions
+    ├── copilot_history.test            # 8 assertions
+    ├── copilot_todos.test              # 8 assertions
+    ├── cross_source.test               # 14 assertions
+    ├── joins.test                      # 7 assertions
+    ├── edge_cases.test                 # 25 assertions
+    └── column_validation.test          # 22 assertions
 ```
+
+**Total: 199 SQLLogicTest assertions + 11 Python smoke test checks = 210 assertions**
 
 ---
 
@@ -285,6 +290,46 @@ To add a new provider (e.g., Gemini):
 4. Add discovery functions in `utils.rs`
 5. Add `Provider::Gemini =>` branches in each module's `load_rows()`
 6. Create `test/data_gemini/` synthetic test data
-7. Add `test/sql/test_copilot_*.sql` test files
+7. Add `test/sql/gemini_*.test` SQLLogicTest files with pinned values
 
 The unified schema approach means new providers just need to map their data to existing columns (with NULL for unsupported fields) and optionally add provider-specific columns.
+
+---
+
+## Task 9: Testing Overhaul — SQLLogicTest Migration
+
+**Commit:** `561d333`
+
+Replaced the entire testing infrastructure from weak PASS/FAIL string patterns to standard DuckDB SQLLogicTest format with pinned expected values.
+
+### Problems with Old Approach
+- `SELECT CASE WHEN ... THEN 'PASS' ELSE 'FAIL' END` pattern only produced strings — DuckDB itself never "failed"
+- 2 always-true conditions (`cnt >= 0` on `COUNT(*)`) that could never fail
+- 11+ tests only checked existence (`> 0`) instead of pinning exact values
+- Not standard DuckDB extension testing format
+
+### Changes
+- **Replaced** 12 `.sql` files (104 weak assertions) → 13 `.test` files (199 pinned assertions)
+- **Updated** Makefile to use `duckdb_sqllogictest` runner directly
+- **Simplified** `scripts/test.sh` to thin wrapper around sqllogictest
+- **Kept** `scripts/smoke_test.sh` as Python DataFrame integration test
+
+### Test Coverage by File
+| File | Assertions | Key Coverage |
+|------|-----------|-------------|
+| `claude_conversations.test` | 34 | Row counts, message type breakdown, UUID format, timestamps, tokens, line number invariants |
+| `copilot_conversations.test` | 26 | All 16 event types pinned, per-session counts, role mapping, workspace.yaml metadata |
+| `claude_plans.test` | 11 | Pinned counts, content validation, distinct names |
+| `claude_history.test` | 12 | Pinned counts, timestamp ranges, referential integrity |
+| `claude_todos.test` | 14 | Status breakdown (9/7/2), file counts, index validation |
+| `claude_stats.test` | 11 | Aggregate totals (2096/22/779), date format, uniqueness |
+| `copilot_plans.test` | 7 | Session ID, content, file size consistency |
+| `copilot_history.test` | 8 | NULL pattern validation (no timestamps/project/session) |
+| `copilot_todos.test` | 8 | Status breakdown (2/2), agent_id NULL |
+| `cross_source.test` | 14 | UNION counts (233/5/25/22), session isolation, source groups |
+| `joins.test` | 7 | Referential integrity, no orphan records, overall count validation |
+| `edge_cases.test` | 25 | Nonexistent paths, empty paths, source mismatches, unknown source fallback |
+| `column_validation.test` | 22 | typeof checks, NULL patterns, value ranges, aggregation correctness |
+
+### Key Discovery
+During test migration, found that Copilot `tool_result` events don't carry `tool_name` (only `tool_start` does). This is a legitimate Copilot data format limitation, now correctly documented and tested.
