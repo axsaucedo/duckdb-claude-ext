@@ -12,10 +12,11 @@ def _():
         """
     # agent_data Explorer
 
-    Interactive exploration of Claude Code session data using the `agent_data` DuckDB extension.
+    Interactive exploration of AI coding agent session data using the `agent_data` DuckDB extension.
 
-    This notebook connects to test data by default. To explore your own data,
-    set `DATA_PATH` to your Claude data directory (e.g., `~/.claude`).
+    Supports both **Claude Code** (`~/.claude`) and **GitHub Copilot CLI** (`~/.copilot`) data.
+
+    Set `DATA_PATH` to your agent data directory, or provide two paths for cross-source analysis.
     """
     )
     return (mo,)
@@ -25,72 +26,88 @@ def _():
 def _(mo):
     import os
 
-    # Configuration: change this to explore your own data
+    # Configuration: change these to explore your own data
     DATA_PATH = os.environ.get("AGENT_DATA_PATH", "test/data")
+    COPILOT_PATH = os.environ.get("COPILOT_DATA_PATH", "test/data_copilot")
     EXTENSION_PATH = os.environ.get(
         "AGENT_DATA_EXT", "build/debug/agent_data.duckdb_extension"
     )
 
     mo.md(
         f"""
-    **Data source:** `{DATA_PATH}`
+    **Primary data:** `{DATA_PATH}`
+    **Copilot data:** `{COPILOT_PATH}`
     **Extension:** `{EXTENSION_PATH}`
     """
     )
-    return DATA_PATH, EXTENSION_PATH, os
+    return COPILOT_PATH, DATA_PATH, EXTENSION_PATH, os
 
 
 @app.cell
-def _(DATA_PATH, EXTENSION_PATH):
+def _(COPILOT_PATH, DATA_PATH, EXTENSION_PATH):
     import duckdb
 
     con = duckdb.connect(config={"allow_unsigned_extensions": "true"})
     con.execute(f"LOAD '{EXTENSION_PATH}'")
 
-    # Load all tables
-    conversations = con.execute(
-        f"SELECT * FROM read_conversations(path='{DATA_PATH}')"
-    ).df()
-    plans = con.execute(f"SELECT * FROM read_plans(path='{DATA_PATH}')").df()
-    todos = con.execute(f"SELECT * FROM read_todos(path='{DATA_PATH}')").df()
-    history = con.execute(f"SELECT * FROM read_history(path='{DATA_PATH}')").df()
-    stats = con.execute(f"SELECT * FROM read_stats(path='{DATA_PATH}')").df()
-    return con, conversations, duckdb, history, plans, stats, todos
+    def load_table(name, path):
+        return con.execute(f"SELECT * FROM read_{name}(path='{path}')").df()
+
+    def load_union(name):
+        return con.execute(
+            f"SELECT * FROM read_{name}(path='{DATA_PATH}') "
+            f"UNION ALL "
+            f"SELECT * FROM read_{name}(path='{COPILOT_PATH}')"
+        ).df()
+
+    # Load all tables from both sources
+    conversations = load_union("conversations")
+    plans = load_union("plans")
+    todos = load_union("todos")
+    history = load_union("history")
+    stats = load_union("stats")
+    return con, conversations, duckdb, history, load_table, load_union, plans, stats, todos
 
 
 @app.cell
 def _(conversations, history, mo, plans, stats, todos):
+    def source_counts(df):
+        if "source" in df.columns:
+            counts = df["source"].value_counts().to_dict()
+            return " | ".join(f"{k}: {v}" for k, v in sorted(counts.items()))
+        return str(len(df))
+
     mo.md(
         f"""
     ## Overview
 
-    | Table | Rows |
-    |-------|------|
-    | Conversations | {len(conversations)} |
-    | Plans | {len(plans)} |
-    | Todos | {len(todos)} |
-    | History | {len(history)} |
-    | Stats | {len(stats)} |
+    | Table | Total Rows | By Source |
+    |-------|-----------|----------|
+    | Conversations | {len(conversations)} | {source_counts(conversations)} |
+    | Plans | {len(plans)} | {source_counts(plans)} |
+    | Todos | {len(todos)} | {source_counts(todos)} |
+    | History | {len(history)} | {source_counts(history)} |
+    | Stats | {len(stats)} | {source_counts(stats)} |
     """
     )
-    return
+    return (source_counts,)
 
 
 @app.cell
 def _(conversations, mo):
-    mo.md("## Conversations by Project and Type")
+    mo.md("## Conversations by Source and Type")
     return
 
 
 @app.cell
 def _(conversations, mo):
     project_summary = (
-        conversations.groupby(["project_path", "message_type"])
+        conversations.groupby(["source", "message_type"])
         .size()
         .reset_index(name="count")
-        .sort_values(["project_path", "count"], ascending=[True, False])
+        .sort_values(["source", "count"], ascending=[True, False])
     )
-    mo.ui.table(project_summary, label="Messages by Project and Type")
+    mo.ui.table(project_summary, label="Messages by Source and Type")
     return (project_summary,)
 
 
@@ -102,13 +119,18 @@ def _(conversations, mo):
 
 @app.cell
 def _(conversations, mo):
-    sessions = conversations[["session_id", "project_path", "is_agent", "file_name"]].drop_duplicates()
+    sessions = conversations[["source", "session_id", "project_path", "file_name"]].drop_duplicates()
+    session_options = {
+        f"[{row['source']}] {row['session_id'][:12]}… ({row['project_path']})": row["session_id"]
+        for _, row in sessions.drop_duplicates(subset=["session_id"]).iterrows()
+        if row["session_id"]
+    }
     session_selector = mo.ui.dropdown(
-        options={s: s for s in sessions["session_id"].unique()},
+        options=session_options,
         label="Select Session",
     )
     session_selector
-    return session_selector, sessions
+    return session_options, session_selector, sessions
 
 
 @app.cell
@@ -118,13 +140,13 @@ def _(conversations, mo, session_selector):
             conversations["session_id"] == session_selector.value
         ][
             [
+                "source",
                 "line_number",
                 "message_type",
                 "message_role",
                 "timestamp",
                 "model",
                 "tool_name",
-                "slug",
             ]
         ].sort_values("line_number")
         mo.ui.table(session_msgs, label=f"Messages in session {session_selector.value}")
@@ -142,7 +164,7 @@ def _(mo):
 @app.cell
 def _(mo, todos):
     todo_status = (
-        todos.groupby("status").size().reset_index(name="count").sort_values("count", ascending=False)
+        todos.groupby(["source", "status"]).size().reset_index(name="count").sort_values("count", ascending=False)
     )
     mo.ui.table(todo_status, label="Todo Status Distribution")
     return (todo_status,)
@@ -150,11 +172,14 @@ def _(mo, todos):
 
 @app.cell
 def _(mo, todos):
+    display_cols = ["source", "session_id", "content", "status"]
+    if "agent_id" in todos.columns:
+        display_cols.insert(2, "agent_id")
     mo.ui.table(
-        todos[["session_id", "agent_id", "content", "status", "active_form"]],
+        todos[display_cols],
         label="All Todos",
     )
-    return
+    return (display_cols,)
 
 
 @app.cell
@@ -166,7 +191,7 @@ def _(mo):
 @app.cell
 def _(mo, plans):
     mo.ui.table(
-        plans[["plan_name", "file_name", "file_size"]],
+        plans[["source", "session_id", "plan_name", "file_name", "file_size"]],
         label="Available Plans",
     )
     return
@@ -187,13 +212,16 @@ def _(history, mo):
         hist_display["timestamp"] = pd.to_datetime(
             hist_display["timestamp_ms"], unit="ms", errors="coerce"
         )
+    display_cols = ["source", "display"]
+    if "timestamp" in hist_display.columns:
+        display_cols.insert(1, "timestamp")
+    if "project" in hist_display.columns:
+        display_cols.append("project")
     mo.ui.table(
-        hist_display[["timestamp", "project", "session_id", "display"]].sort_values(
-            "timestamp", ascending=False
-        ),
+        hist_display[display_cols].sort_values(display_cols[1], ascending=False, na_position="last"),
         label="Command History",
     )
-    return hist_display, pd
+    return display_cols, hist_display, pd
 
 
 @app.cell
@@ -204,7 +232,10 @@ def _(mo):
 
 @app.cell
 def _(mo, stats):
-    mo.ui.table(stats, label="Daily Activity")
+    if len(stats) > 0:
+        mo.ui.table(stats, label="Daily Activity")
+    else:
+        mo.md("*No stats data available*")
     return
 
 
@@ -212,31 +243,40 @@ def _(mo, stats):
 def _(mo):
     mo.md(
         """
-    ## Cross-Table Analysis
+    ## Cross-Source Analysis
 
-    Join conversations with todos and history to see the full picture.
+    Aggregate session activity across all loaded sources.
     """
     )
     return
 
 
 @app.cell
-def _(con, DATA_PATH, mo):
+def _(COPILOT_PATH, DATA_PATH, con, mo):
     cross_query = f"""
+    WITH all_conversations AS (
+        SELECT * FROM read_conversations(path='{DATA_PATH}')
+        UNION ALL
+        SELECT * FROM read_conversations(path='{COPILOT_PATH}')
+    ),
+    all_todos AS (
+        SELECT * FROM read_todos(path='{DATA_PATH}')
+        UNION ALL
+        SELECT * FROM read_todos(path='{COPILOT_PATH}')
+    )
     SELECT
+        c.source,
         c.session_id,
         c.project_path,
         COUNT(DISTINCT c.uuid) as message_count,
-        COUNT(DISTINCT t.content) as todo_count,
-        COUNT(DISTINCT h.display) as history_entries
-    FROM read_conversations(path='{DATA_PATH}') c
-    LEFT JOIN read_todos(path='{DATA_PATH}') t ON c.session_id = t.session_id
-    LEFT JOIN read_history(path='{DATA_PATH}') h ON c.session_id = h.session_id
-    GROUP BY c.session_id, c.project_path
+        COUNT(DISTINCT t.content) as todo_count
+    FROM all_conversations c
+    LEFT JOIN all_todos t ON c.session_id = t.session_id AND c.source = t.source
+    GROUP BY c.source, c.session_id, c.project_path
     ORDER BY message_count DESC
     """
     cross_data = con.execute(cross_query).df()
-    mo.ui.table(cross_data, label="Session Activity Summary")
+    mo.ui.table(cross_data, label="Session Activity Summary (All Sources)")
     return cross_data, cross_query
 
 
