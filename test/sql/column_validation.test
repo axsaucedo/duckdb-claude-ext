@@ -1,0 +1,184 @@
+# name: test/sql/column_validation.test
+# description: column type correctness, NULL patterns, and value range tests
+# group: [agent_data]
+
+require agent_data
+
+# ============================================================
+# Conversations: column type validation via typeof()
+# ============================================================
+
+# source is VARCHAR
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data')
+WHERE typeof(source) != 'VARCHAR';
+----
+0
+
+# line_number is BIGINT
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data')
+WHERE typeof(line_number) != 'BIGINT';
+----
+0
+
+# is_agent is BOOLEAN
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data')
+WHERE typeof(is_agent) != 'BOOLEAN';
+----
+0
+
+# ============================================================
+# Conversations: value range validation
+# ============================================================
+
+# line_number always positive
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE line_number <= 0;
+----
+0
+
+# line_number max is reasonable (not corrupted)
+query I
+SELECT MAX(line_number) <= 100 FROM read_conversations(path='test/data');
+----
+true
+
+# ============================================================
+# History: value range validation
+# ============================================================
+
+# Claude timestamps are in reasonable range (year 2025+, not epoch 0)
+query I
+SELECT MIN(timestamp_ms) > 1700000000000 FROM read_history(path='test/data');
+----
+true
+
+# ============================================================
+# Stats: value ranges
+# ============================================================
+
+# Message count per day is reasonable (0-10000)
+query I
+SELECT COUNT(*) FROM read_stats(path='test/data') WHERE message_count > 10000;
+----
+0
+
+# Session count per day is reasonable (0-1000)
+query I
+SELECT COUNT(*) FROM read_stats(path='test/data') WHERE session_count > 1000;
+----
+0
+
+# ============================================================
+# NULL pattern validation: Claude conversations
+# ============================================================
+
+# source is never NULL
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE source IS NULL;
+----
+0
+
+# session_id is never NULL
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE session_id IS NULL;
+----
+0
+
+# message_type is never NULL
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE message_type IS NULL;
+----
+0
+
+# ============================================================
+# NULL pattern validation: Copilot conversations
+# ============================================================
+
+# source is never NULL
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot') WHERE source IS NULL;
+----
+0
+
+# session_id is never NULL
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot') WHERE session_id IS NULL;
+----
+0
+
+# message_type is never NULL
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot') WHERE message_type IS NULL;
+----
+0
+
+# ============================================================
+# Plans: file_size consistency
+# ============================================================
+
+# Claude plan sizes are in reasonable range (100-10000 bytes)
+query I
+SELECT COUNT(*) FROM read_plans(path='test/data') WHERE file_size < 100 OR file_size > 10000;
+----
+0
+
+# Copilot plan sizes are in reasonable range
+query I
+SELECT COUNT(*) FROM read_plans(path='test/data_copilot') WHERE file_size < 10 OR file_size > 10000;
+----
+0
+
+# ============================================================
+# Ordering: results are deterministic
+# ============================================================
+
+# Same query twice returns same count
+query I
+SELECT (SELECT COUNT(*) FROM read_conversations(path='test/data'))
+     = (SELECT COUNT(*) FROM read_conversations(path='test/data'));
+----
+true
+
+# ============================================================
+# Copilot: token columns (mostly NULL except session.start)
+# ============================================================
+
+# Copilot has at most 1 row with input_tokens (from session.start)
+query I
+SELECT COUNT(*) <= 4 FROM read_conversations(path='test/data_copilot') WHERE input_tokens IS NOT NULL;
+----
+true
+
+# ============================================================
+# Aggregation correctness
+# ============================================================
+
+# GROUP BY source on conversations produces exactly the right groups
+query II
+SELECT source, COUNT(*) FROM read_conversations(path='test/data') GROUP BY source ORDER BY source;
+----
+claude	180
+
+query II
+SELECT source, COUNT(*) FROM read_conversations(path='test/data_copilot') GROUP BY source ORDER BY source;
+----
+copilot	53
+
+# GROUP BY message_type on Claude produces 4 groups
+query I
+SELECT COUNT(*) FROM (
+    SELECT message_type FROM read_conversations(path='test/data') GROUP BY message_type
+);
+----
+4
+
+# GROUP BY message_type on Copilot produces 16 groups
+query I
+SELECT COUNT(*) FROM (
+    SELECT message_type FROM read_conversations(path='test/data_copilot') GROUP BY message_type
+);
+----
+16

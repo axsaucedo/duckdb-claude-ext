@@ -1,0 +1,95 @@
+# name: test/sql/claude_history.test
+# description: comprehensive tests for Claude history loading
+# group: [agent_data]
+
+require agent_data
+
+# ============================================================
+# Row counts
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM read_history(path='test/data');
+----
+20
+
+# All rows have source = 'claude'
+query I
+SELECT COUNT(*) FROM read_history(path='test/data') WHERE source != 'claude';
+----
+0
+
+# ============================================================
+# Column NOT NULL invariants
+# ============================================================
+
+# line_number starts at 1
+query I
+SELECT MIN(line_number) FROM read_history(path='test/data');
+----
+1
+
+# line_number max = 20
+query I
+SELECT MAX(line_number) FROM read_history(path='test/data');
+----
+20
+
+# All timestamps present
+query I
+SELECT COUNT(*) FROM read_history(path='test/data') WHERE timestamp_ms IS NULL;
+----
+0
+
+# All projects present
+query I
+SELECT COUNT(*) FROM read_history(path='test/data') WHERE project IS NULL;
+----
+0
+
+# All session_ids present
+query I
+SELECT COUNT(*) FROM read_history(path='test/data') WHERE session_id IS NULL;
+----
+0
+
+# All display values present
+query I
+SELECT COUNT(*) FROM read_history(path='test/data') WHERE display IS NULL;
+----
+0
+
+# ============================================================
+# Referential integrity
+# ============================================================
+
+# 3 distinct projects
+query I
+SELECT COUNT(DISTINCT project) FROM read_history(path='test/data');
+----
+3
+
+# 6 distinct sessions
+query I
+SELECT COUNT(DISTINCT session_id) FROM read_history(path='test/data');
+----
+6
+
+# ============================================================
+# No parse errors
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM read_history(path='test/data') WHERE display LIKE 'Parse error:%';
+----
+0
+
+# ============================================================
+# Timestamp range validation
+# ============================================================
+
+# Timestamps are positive (not epoch 0 or negative)
+query I
+SELECT COUNT(*) FROM read_history(path='test/data') WHERE timestamp_ms <= 0;
+----
+0

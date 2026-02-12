@@ -1,0 +1,102 @@
+# name: test/sql/claude_todos.test
+# description: comprehensive tests for Claude todo loading
+# group: [agent_data]
+
+require agent_data
+
+# ============================================================
+# Row counts
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data');
+----
+18
+
+# All rows have source = 'claude'
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data') WHERE source != 'claude';
+----
+0
+
+# ============================================================
+# Status breakdown (pinned)
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data') WHERE status = 'in_progress';
+----
+9
+
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data') WHERE status = 'completed';
+----
+7
+
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data') WHERE status = 'pending';
+----
+2
+
+# No parse errors
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data') WHERE status = '_parse_error';
+----
+0
+
+# Only valid statuses
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data')
+WHERE status NOT IN ('pending', 'in_progress', 'completed', '_parse_error');
+----
+0
+
+# ============================================================
+# Column NOT NULL invariants
+# ============================================================
+
+# session_id never NULL
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data') WHERE session_id IS NULL;
+----
+0
+
+# agent_id never NULL for Claude
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data') WHERE agent_id IS NULL;
+----
+0
+
+# file_name never empty
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data') WHERE file_name = '' OR file_name IS NULL;
+----
+0
+
+# content never empty
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data') WHERE content = '' OR content IS NULL;
+----
+0
+
+# ============================================================
+# Structure invariants
+# ============================================================
+
+# 5 distinct todo files
+query I
+SELECT COUNT(DISTINCT file_name) FROM read_todos(path='test/data');
+----
+5
+
+# 5 distinct sessions
+query I
+SELECT COUNT(DISTINCT session_id) FROM read_todos(path='test/data');
+----
+5
+
+# item_index starts at 0
+query I
+SELECT MIN(item_index) FROM read_todos(path='test/data');
+----
+0

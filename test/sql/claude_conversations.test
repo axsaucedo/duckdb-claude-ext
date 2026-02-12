@@ -1,0 +1,281 @@
+# name: test/sql/claude_conversations.test
+# description: comprehensive tests for Claude conversation loading
+# group: [agent_data]
+
+require agent_data
+
+# ============================================================
+# Row counts
+# ============================================================
+
+# Total row count pinned to fixture
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data');
+----
+180
+
+# Distinct session count
+query I
+SELECT COUNT(DISTINCT session_id) FROM read_conversations(path='test/data');
+----
+6
+
+# Distinct project count
+query I
+SELECT COUNT(DISTINCT project_path) FROM read_conversations(path='test/data');
+----
+3
+
+# Distinct file count (6 main + 6 agent = 12)
+query I
+SELECT COUNT(DISTINCT file_name) FROM read_conversations(path='test/data');
+----
+12
+
+# Each session has exactly 30 rows (180 / 6)
+query I
+SELECT COUNT(DISTINCT session_id) FROM (
+    SELECT session_id, COUNT(*) AS cnt
+    FROM read_conversations(path='test/data')
+    GROUP BY session_id
+    HAVING cnt = 30
+);
+----
+6
+
+# ============================================================
+# Source column
+# ============================================================
+
+# All rows have source = 'claude'
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE source != 'claude';
+----
+0
+
+# Explicit source='claude' returns same count
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data', source='claude');
+----
+180
+
+# ============================================================
+# Message type breakdown (pinned counts)
+# ============================================================
+
+# 4 distinct message types
+query I
+SELECT COUNT(DISTINCT message_type) FROM read_conversations(path='test/data');
+----
+4
+
+# User messages
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE message_type = 'user';
+----
+78
+
+# Assistant messages
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE message_type = 'assistant';
+----
+78
+
+# Summary messages
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE message_type = 'summary';
+----
+6
+
+# File-history-snapshot messages
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE message_type = 'file-history-snapshot';
+----
+18
+
+# No parse errors in test data
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE message_type = '_parse_error';
+----
+0
+
+# ============================================================
+# Agent file detection
+# ============================================================
+
+# Agent rows count
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE is_agent = true;
+----
+36
+
+# Non-agent rows count
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE is_agent = false;
+----
+144
+
+# ============================================================
+# Column NOT NULL invariants
+# ============================================================
+
+# session_id never NULL
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE session_id IS NULL;
+----
+0
+
+# project_path never NULL
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE project_path IS NULL;
+----
+0
+
+# project_dir never NULL
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE project_dir IS NULL;
+----
+0
+
+# file_name never NULL
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE file_name IS NULL;
+----
+0
+
+# message_type never NULL
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE message_type IS NULL;
+----
+0
+
+# line_number never NULL and always >= 1
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE line_number IS NULL OR line_number < 1;
+----
+0
+
+# ============================================================
+# UUID format validation
+# ============================================================
+
+# All user/assistant messages have valid UUIDs
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data')
+WHERE message_type IN ('user', 'assistant')
+AND uuid IS NOT NULL
+AND uuid NOT SIMILAR TO '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+----
+0
+
+# User/assistant messages have non-NULL UUIDs
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data')
+WHERE message_type IN ('user', 'assistant') AND uuid IS NULL;
+----
+0
+
+# ============================================================
+# Timestamp validation
+# ============================================================
+
+# All timestamps follow ISO 8601
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data')
+WHERE timestamp IS NOT NULL
+AND timestamp NOT SIMILAR TO '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}.*';
+----
+0
+
+# ============================================================
+# Model and token columns
+# ============================================================
+
+# All assistant messages have a model
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data')
+WHERE message_type = 'assistant' AND model IS NULL;
+----
+0
+
+# Exactly one model in test data
+query I
+SELECT COUNT(DISTINCT model) FROM read_conversations(path='test/data') WHERE model IS NOT NULL;
+----
+1
+
+# Token counts non-negative where present
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data')
+WHERE (input_tokens IS NOT NULL AND input_tokens < 0)
+   OR (output_tokens IS NOT NULL AND output_tokens < 0)
+   OR (cache_creation_tokens IS NOT NULL AND cache_creation_tokens < 0)
+   OR (cache_read_tokens IS NOT NULL AND cache_read_tokens < 0);
+----
+0
+
+# 78 rows have input_tokens (assistant messages)
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE input_tokens IS NOT NULL;
+----
+78
+
+# ============================================================
+# Claude-specific columns
+# ============================================================
+
+# Slug values present for user/assistant messages
+query I
+SELECT COUNT(*) > 0 FROM read_conversations(path='test/data') WHERE slug IS NOT NULL;
+----
+true
+
+# Repository is NULL for Claude data (Claude-specific: no repo field)
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE repository IS NOT NULL;
+----
+0
+
+# ============================================================
+# Line number per-file invariant
+# ============================================================
+
+# Every file starts at line 1
+query I
+SELECT COUNT(*) FROM (
+    SELECT file_name, MIN(line_number) AS min_ln
+    FROM read_conversations(path='test/data')
+    GROUP BY file_name
+    HAVING min_ln != 1
+);
+----
+0
+
+# Line numbers are contiguous per file (max = count per file)
+query I
+SELECT COUNT(*) FROM (
+    SELECT file_name, MAX(line_number) AS max_ln, COUNT(*) AS cnt
+    FROM read_conversations(path='test/data')
+    GROUP BY file_name
+    HAVING max_ln != cnt
+);
+----
+0
+
+# ============================================================
+# Content validation
+# ============================================================
+
+# User messages all have content
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data')
+WHERE message_type = 'user' AND message_content IS NULL;
+----
+0
+
+# Assistant messages all have content
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data')
+WHERE message_type = 'assistant' AND message_content IS NULL;
+----
+0

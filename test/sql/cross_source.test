@@ -1,0 +1,156 @@
+# name: test/sql/cross_source.test
+# description: cross-source UNION queries and source isolation tests
+# group: [agent_data]
+
+require agent_data
+
+# ============================================================
+# UNION ALL counts across sources
+# ============================================================
+
+# Conversations: 180 + 53 = 233
+query I
+SELECT COUNT(*) FROM (
+    SELECT * FROM read_conversations(path='test/data')
+    UNION ALL
+    SELECT * FROM read_conversations(path='test/data_copilot')
+);
+----
+233
+
+# Plans: 4 + 1 = 5
+query I
+SELECT COUNT(*) FROM (
+    SELECT * FROM read_plans(path='test/data')
+    UNION ALL
+    SELECT * FROM read_plans(path='test/data_copilot')
+);
+----
+5
+
+# History: 20 + 5 = 25
+query I
+SELECT COUNT(*) FROM (
+    SELECT * FROM read_history(path='test/data')
+    UNION ALL
+    SELECT * FROM read_history(path='test/data_copilot')
+);
+----
+25
+
+# Todos: 18 + 4 = 22
+query I
+SELECT COUNT(*) FROM (
+    SELECT * FROM read_todos(path='test/data')
+    UNION ALL
+    SELECT * FROM read_todos(path='test/data_copilot')
+);
+----
+22
+
+# ============================================================
+# Source breakdown in UNION
+# ============================================================
+
+query II
+SELECT source, COUNT(*) AS cnt FROM (
+    SELECT * FROM read_conversations(path='test/data')
+    UNION ALL
+    SELECT * FROM read_conversations(path='test/data_copilot')
+) GROUP BY source ORDER BY source;
+----
+claude	180
+copilot	53
+
+# ============================================================
+# Session ID isolation (no collisions between sources)
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM (
+    SELECT DISTINCT session_id FROM read_conversations(path='test/data') WHERE session_id != ''
+    INTERSECT
+    SELECT DISTINCT session_id FROM read_conversations(path='test/data_copilot') WHERE session_id != ''
+);
+----
+0
+
+# ============================================================
+# Source-specific columns in UNION
+# ============================================================
+
+# Copilot has session_start type, Claude does not
+query I
+SELECT COUNT(*) > 0 FROM (
+    SELECT * FROM read_conversations(path='test/data')
+    UNION ALL
+    SELECT * FROM read_conversations(path='test/data_copilot')
+) WHERE message_type = 'session_start';
+----
+true
+
+# Only copilot rows have session_start
+query I
+SELECT COUNT(DISTINCT source) FROM (
+    SELECT * FROM read_conversations(path='test/data')
+    UNION ALL
+    SELECT * FROM read_conversations(path='test/data_copilot')
+) WHERE message_type = 'session_start';
+----
+1
+
+# ============================================================
+# Column compatibility (schemas align for UNION)
+# ============================================================
+
+# Slug only on Claude, NULL on Copilot
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot') WHERE slug IS NOT NULL;
+----
+0
+
+# Repository only on Copilot, NULL on Claude
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE repository IS NOT NULL;
+----
+0
+
+# ============================================================
+# Distinct sources across tables
+# ============================================================
+
+query I
+SELECT COUNT(DISTINCT source) FROM (
+    SELECT source FROM read_conversations(path='test/data')
+    UNION ALL
+    SELECT source FROM read_conversations(path='test/data_copilot')
+);
+----
+2
+
+query I
+SELECT COUNT(DISTINCT source) FROM (
+    SELECT source FROM read_plans(path='test/data')
+    UNION ALL
+    SELECT source FROM read_plans(path='test/data_copilot')
+);
+----
+2
+
+query I
+SELECT COUNT(DISTINCT source) FROM (
+    SELECT source FROM read_history(path='test/data')
+    UNION ALL
+    SELECT source FROM read_history(path='test/data_copilot')
+);
+----
+2
+
+query I
+SELECT COUNT(DISTINCT source) FROM (
+    SELECT source FROM read_todos(path='test/data')
+    UNION ALL
+    SELECT source FROM read_todos(path='test/data_copilot')
+);
+----
+2

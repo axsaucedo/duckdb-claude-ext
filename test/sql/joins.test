@@ -1,0 +1,92 @@
+# name: test/sql/joins.test
+# description: cross-table join and referential integrity tests
+# group: [agent_data]
+
+require agent_data
+
+# ============================================================
+# Claude: conversations <-> history join via session_id
+# ============================================================
+
+query I
+SELECT COUNT(*) > 0 FROM (
+    SELECT DISTINCT c.session_id
+    FROM read_conversations(path='test/data') c
+    JOIN read_history(path='test/data') h ON c.session_id = h.session_id
+);
+----
+true
+
+# ============================================================
+# Claude: conversations <-> history join via project_path
+# ============================================================
+
+query I
+SELECT COUNT(*) > 0 FROM (
+    SELECT DISTINCT c.project_path
+    FROM read_conversations(path='test/data') c
+    JOIN read_history(path='test/data') h ON c.project_path = h.project
+);
+----
+true
+
+# ============================================================
+# Claude: conversations <-> todos join via session_id
+# ============================================================
+
+query I
+SELECT COUNT(*) > 0 FROM (
+    SELECT DISTINCT c.session_id
+    FROM read_conversations(path='test/data') c
+    JOIN read_todos(path='test/data') t ON c.session_id = t.session_id
+);
+----
+true
+
+# ============================================================
+# No orphaned history projects (all history projects exist in conversations)
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM (
+    SELECT DISTINCT project FROM read_history(path='test/data')
+    WHERE project NOT IN (SELECT DISTINCT project_path FROM read_conversations(path='test/data'))
+);
+----
+0
+
+# ============================================================
+# No orphaned todo sessions (all todo session_ids exist in conversations)
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM (
+    SELECT DISTINCT session_id FROM read_todos(path='test/data')
+    WHERE session_id NOT IN (SELECT DISTINCT session_id FROM read_conversations(path='test/data'))
+);
+----
+0
+
+# ============================================================
+# Stats date format is valid
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM read_stats(path='test/data')
+WHERE date NOT SIMILAR TO '[0-9]{4}-[0-9]{2}-[0-9]{2}';
+----
+0
+
+# ============================================================
+# Overall count validation (all tables)
+# ============================================================
+
+query IIIII
+SELECT
+    (SELECT COUNT(*) FROM read_conversations(path='test/data')) AS conv,
+    (SELECT COUNT(*) FROM read_plans(path='test/data')) AS plans,
+    (SELECT COUNT(*) FROM read_todos(path='test/data')) AS todos,
+    (SELECT COUNT(*) FROM read_history(path='test/data')) AS hist,
+    (SELECT COUNT(*) FROM read_stats(path='test/data')) AS stats;
+----
+180	4	18	20	7

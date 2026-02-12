@@ -1,0 +1,236 @@
+# name: test/sql/copilot_conversations.test
+# description: comprehensive tests for Copilot conversation loading
+# group: [agent_data]
+
+require agent_data
+
+# ============================================================
+# Row counts
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot');
+----
+53
+
+# 4 distinct sessions
+query I
+SELECT COUNT(DISTINCT session_id) FROM read_conversations(path='test/data_copilot');
+----
+4
+
+# ============================================================
+# Source column
+# ============================================================
+
+# All rows have source = 'copilot'
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot') WHERE source != 'copilot';
+----
+0
+
+# Explicit source='copilot' returns same count
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot', source='copilot');
+----
+53
+
+# ============================================================
+# Session breakdown (pinned per-session counts)
+# ============================================================
+
+query II
+SELECT session_id, COUNT(*) AS cnt FROM read_conversations(path='test/data_copilot')
+GROUP BY session_id ORDER BY session_id;
+----
+aaaa1111-0000-0000-0000-000000000001	30
+bbbb2222-0000-0000-0000-000000000002	10
+cccc3333-0000-0000-0000-000000000003	8
+dddd4444-0000-0000-0000-000000000004	5
+
+# ============================================================
+# All 16 message types present (pinned counts)
+# ============================================================
+
+query I
+SELECT COUNT(DISTINCT message_type) FROM read_conversations(path='test/data_copilot');
+----
+16
+
+query II
+SELECT message_type, COUNT(*) AS cnt FROM read_conversations(path='test/data_copilot')
+GROUP BY message_type ORDER BY message_type;
+----
+abort	2
+assistant	11
+compaction_complete	1
+compaction_start	1
+model_change	1
+reasoning	1
+session_error	1
+session_info	2
+session_resume	1
+session_start	4
+tool_result	5
+tool_start	5
+truncation	1
+turn_end	5
+turn_start	5
+user	7
+
+# ============================================================
+# Column NOT NULL invariants
+# ============================================================
+
+# session_id never NULL or empty
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot')
+WHERE session_id IS NULL OR session_id = '';
+----
+0
+
+# message_type never NULL
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot') WHERE message_type IS NULL;
+----
+0
+
+# timestamp always present for Copilot
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot') WHERE timestamp IS NULL;
+----
+0
+
+# UUID always present for Copilot
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot') WHERE uuid IS NULL;
+----
+0
+
+# ============================================================
+# Content validation
+# ============================================================
+
+# User messages have content
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot')
+WHERE message_type = 'user' AND message_content IS NULL;
+----
+0
+
+# Assistant messages have content
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot')
+WHERE message_type = 'assistant' AND message_content IS NULL;
+----
+0
+
+# Tool start events have tool_name
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot')
+WHERE message_type = 'tool_start' AND tool_name IS NULL;
+----
+0
+
+# Tool result events do NOT carry tool_name (Copilot format limitation)
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot')
+WHERE message_type = 'tool_result' AND tool_name IS NOT NULL;
+----
+0
+
+# ============================================================
+# Role mapping
+# ============================================================
+
+# User messages have role=user
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot')
+WHERE message_type = 'user' AND message_role != 'user';
+----
+0
+
+# Assistant messages have role=assistant
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot')
+WHERE message_type = 'assistant' AND message_role != 'assistant';
+----
+0
+
+# Session events have NULL role
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot')
+WHERE message_type IN ('session_start', 'session_resume', 'session_info', 'session_error',
+                        'truncation', 'model_change', 'compaction_start', 'compaction_complete', 'abort')
+AND message_role IS NOT NULL;
+----
+0
+
+# ============================================================
+# Metadata from workspace.yaml and session.start
+# ============================================================
+
+# Repository populated from workspace.yaml (2 distinct repos)
+query I
+SELECT COUNT(DISTINCT repository) FROM read_conversations(path='test/data_copilot')
+WHERE repository IS NOT NULL;
+----
+2
+
+# Git branch populated
+query I
+SELECT COUNT(*) > 0 FROM read_conversations(path='test/data_copilot')
+WHERE git_branch IS NOT NULL;
+----
+true
+
+# Version populated from session.start
+query I
+SELECT COUNT(*) > 0 FROM read_conversations(path='test/data_copilot')
+WHERE version IS NOT NULL;
+----
+true
+
+# Model populated
+query I
+SELECT COUNT(DISTINCT model) FROM read_conversations(path='test/data_copilot')
+WHERE model IS NOT NULL;
+----
+1
+
+# ============================================================
+# Parent UUID tracking
+# ============================================================
+
+# Copilot events have parent_uuid relationships
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot') WHERE parent_uuid IS NOT NULL;
+----
+49
+
+# ============================================================
+# No parse errors
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot') WHERE message_type = '_parse_error';
+----
+0
+
+# ============================================================
+# Copilot-specific tool names
+# ============================================================
+
+query I
+SELECT COUNT(DISTINCT tool_name) FROM read_conversations(path='test/data_copilot') WHERE tool_name IS NOT NULL;
+----
+3
+
+# ============================================================
+# Copilot slug is always NULL (no slug concept)
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot') WHERE slug IS NOT NULL;
+----
+0

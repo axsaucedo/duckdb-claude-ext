@@ -1,0 +1,62 @@
+# name: test/sql/copilot_history.test
+# description: comprehensive tests for Copilot history loading
+# group: [agent_data]
+
+require agent_data
+
+# ============================================================
+# Row counts
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM read_history(path='test/data_copilot');
+----
+5
+
+# All rows have source = 'copilot'
+query I
+SELECT COUNT(*) FROM read_history(path='test/data_copilot') WHERE source != 'copilot';
+----
+0
+
+# ============================================================
+# Column validation
+# ============================================================
+
+# Display column populated
+query I
+SELECT COUNT(*) FROM read_history(path='test/data_copilot') WHERE display IS NULL;
+----
+0
+
+# Line numbers sequential 1-5
+query I
+SELECT MIN(line_number) FROM read_history(path='test/data_copilot');
+----
+1
+
+query I
+SELECT MAX(line_number) FROM read_history(path='test/data_copilot');
+----
+5
+
+# ============================================================
+# Copilot history has NULL timestamps (no timestamp in format)
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM read_history(path='test/data_copilot') WHERE timestamp_ms IS NOT NULL;
+----
+0
+
+# Copilot history has NULL project (no project in format)
+query I
+SELECT COUNT(*) FROM read_history(path='test/data_copilot') WHERE project IS NOT NULL;
+----
+0
+
+# Copilot history has NULL session_id (no session in format)
+query I
+SELECT COUNT(*) FROM read_history(path='test/data_copilot') WHERE session_id IS NOT NULL;
+----
+0

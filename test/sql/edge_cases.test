@@ -1,0 +1,173 @@
+# name: test/sql/edge_cases.test
+# description: edge case and error handling tests
+# group: [agent_data]
+
+require agent_data
+
+# ============================================================
+# Nonexistent path returns 0 rows (graceful, no error)
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM read_conversations(path='nonexistent_path_that_does_not_exist');
+----
+0
+
+query I
+SELECT COUNT(*) FROM read_plans(path='nonexistent_path_that_does_not_exist');
+----
+0
+
+query I
+SELECT COUNT(*) FROM read_history(path='nonexistent_path_that_does_not_exist');
+----
+0
+
+query I
+SELECT COUNT(*) FROM read_todos(path='nonexistent_path_that_does_not_exist');
+----
+0
+
+query I
+SELECT COUNT(*) FROM read_stats(path='nonexistent_path_that_does_not_exist');
+----
+0
+
+# ============================================================
+# Empty path returns 0 rows
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM read_conversations(path='');
+----
+0
+
+query I
+SELECT COUNT(*) FROM read_plans(path='');
+----
+0
+
+query I
+SELECT COUNT(*) FROM read_todos(path='');
+----
+0
+
+query I
+SELECT COUNT(*) FROM read_history(path='');
+----
+0
+
+query I
+SELECT COUNT(*) FROM read_stats(path='');
+----
+0
+
+# ============================================================
+# Source mismatch: Claude data with source='copilot'
+# Forces Copilot parsing on Claude data -> should return 0 (no session-state dir)
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data', source='copilot');
+----
+0
+
+query I
+SELECT COUNT(*) FROM read_plans(path='test/data', source='copilot');
+----
+0
+
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data', source='copilot');
+----
+0
+
+query I
+SELECT COUNT(*) FROM read_history(path='test/data', source='copilot');
+----
+0
+
+# ============================================================
+# Source mismatch: Copilot data with source='claude'
+# Forces Claude parsing on Copilot data -> should return 0 (no projects dir)
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot', source='claude');
+----
+0
+
+query I
+SELECT COUNT(*) FROM read_plans(path='test/data_copilot', source='claude');
+----
+0
+
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data_copilot', source='claude');
+----
+0
+
+query I
+SELECT COUNT(*) FROM read_history(path='test/data_copilot', source='claude');
+----
+0
+
+# ============================================================
+# Copilot stats returns 0 rows (no stats equivalent)
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM read_stats(path='test/data_copilot');
+----
+0
+
+# ============================================================
+# Unknown source string falls back to auto-detection
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data', source='unknown_garbage');
+----
+180
+
+query I
+SELECT COUNT(*) FROM read_conversations(path='test/data_copilot', source='unknown_garbage');
+----
+53
+
+# ============================================================
+# Column count validation (correct number of columns)
+# ============================================================
+
+# Conversations: 27 columns
+query I
+SELECT COUNT(*) FROM (
+    SELECT * FROM read_conversations(path='test/data') LIMIT 0
+) sub;
+----
+0
+
+# ============================================================
+# WHERE filters work correctly
+# ============================================================
+
+# Filter by specific session
+query I
+SELECT COUNT(*) = 30 FROM read_conversations(path='test/data_copilot')
+WHERE session_id = 'aaaa1111-0000-0000-0000-000000000001';
+----
+true
+
+# Filter by message_type
+query I
+SELECT COUNT(*) = 7 FROM read_conversations(path='test/data_copilot')
+WHERE message_type = 'user';
+----
+true
+
+# Multiple WHERE conditions
+query I
+SELECT COUNT(*) > 0 FROM read_conversations(path='test/data')
+WHERE message_type = 'assistant' AND model IS NOT NULL AND input_tokens > 0;
+----
+true

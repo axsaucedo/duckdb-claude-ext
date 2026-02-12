@@ -1,0 +1,63 @@
+# name: test/sql/copilot_todos.test
+# description: comprehensive tests for Copilot todo loading
+# group: [agent_data]
+
+require agent_data
+
+# ============================================================
+# Row counts
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data_copilot');
+----
+4
+
+# All rows have source = 'copilot'
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data_copilot') WHERE source != 'copilot';
+----
+0
+
+# ============================================================
+# Status breakdown (pinned)
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data_copilot') WHERE status = 'completed';
+----
+2
+
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data_copilot') WHERE status = 'pending';
+----
+2
+
+# Only valid statuses
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data_copilot')
+WHERE status NOT IN ('completed', 'pending');
+----
+0
+
+# ============================================================
+# Column validation
+# ============================================================
+
+# Session ID populated
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data_copilot') WHERE session_id = '' OR session_id IS NULL;
+----
+0
+
+# Content non-empty
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data_copilot') WHERE content = '' OR content IS NULL;
+----
+0
+
+# agent_id NULL for Copilot (not applicable)
+query I
+SELECT COUNT(*) FROM read_todos(path='test/data_copilot') WHERE agent_id IS NOT NULL;
+----
+0

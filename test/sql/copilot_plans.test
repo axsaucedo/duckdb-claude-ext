@@ -1,0 +1,54 @@
+# name: test/sql/copilot_plans.test
+# description: comprehensive tests for Copilot plan loading
+# group: [agent_data]
+
+require agent_data
+
+# ============================================================
+# Row counts
+# ============================================================
+
+query I
+SELECT COUNT(*) FROM read_plans(path='test/data_copilot');
+----
+1
+
+# All rows have source = 'copilot'
+query I
+SELECT COUNT(*) FROM read_plans(path='test/data_copilot') WHERE source != 'copilot';
+----
+0
+
+# ============================================================
+# Column validation
+# ============================================================
+
+# Session ID populated for Copilot plans
+query I
+SELECT COUNT(*) FROM read_plans(path='test/data_copilot') WHERE session_id IS NULL;
+----
+0
+
+# Content is non-empty
+query I
+SELECT COUNT(*) FROM read_plans(path='test/data_copilot') WHERE content = '' OR content IS NULL;
+----
+0
+
+# File size positive
+query I
+SELECT COUNT(*) FROM read_plans(path='test/data_copilot') WHERE file_size <= 0;
+----
+0
+
+# File size matches content length
+query I
+SELECT COUNT(*) FROM read_plans(path='test/data_copilot') WHERE file_size != LENGTH(content);
+----
+0
+
+# Plan name = session_id for Copilot
+query I
+SELECT COUNT(*) FROM read_plans(path='test/data_copilot') WHERE plan_name != session_id;
+----
+0
