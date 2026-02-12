@@ -78,7 +78,9 @@ pub trait TableFunc: Sized + 'static {
 
 #[repr(C)]
 pub struct GenericBindData<R: Send + 'static> {
-    rows: Mutex<Vec<R>>,
+    path: Option<String>,
+    source: Option<String>,
+    rows: Mutex<Option<Vec<R>>>,
 }
 
 #[repr(C)]
@@ -121,8 +123,7 @@ impl<T: TableFunc> VTab for GenericVTab<T> {
 
         let path = resolve_path(bind);
         let source = resolve_source(bind);
-        let rows = T::load_rows(path.as_deref(), source.as_deref());
-        Ok(GenericBindData { rows: Mutex::new(rows) })
+        Ok(GenericBindData { path, source, rows: Mutex::new(None) })
     }
 
     fn init(_: &InitInfo) -> Result<Self::InitData, Box<dyn std::error::Error>> {
@@ -135,7 +136,16 @@ impl<T: TableFunc> VTab for GenericVTab<T> {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let bind_data = func.get_bind_data();
         let init_data = func.get_init_data();
-        let rows = bind_data.rows.lock().unwrap();
+        let mut guard = bind_data.rows.lock().unwrap();
+
+        // Lazy load: defer I/O from bind (planning) to first func() call (execution)
+        if guard.is_none() {
+            *guard = Some(T::load_rows(
+                bind_data.path.as_deref(),
+                bind_data.source.as_deref(),
+            ));
+        }
+        let rows = guard.as_ref().unwrap();
 
         let offset = init_data.offset.load(Ordering::Relaxed);
         if offset >= rows.len() {
