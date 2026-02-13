@@ -1,5 +1,5 @@
-{"type":"session.start","id":"evt-dddd-0001","timestamp":"2026-01-18T08:00:00.000Z","parentId":null,"data":{"sessionId":"dddd4444-0000-0000-0000-000000000004","copilotVersion":"0.0.402","context":{"cwd":"/Users/testuser/quick-fix"}}}
-{"type":"user.message","id":"evt-dddd-0002","timestamp":"2026-01-18T08:00:01.000Z","parentId":"evt-dddd-0001","data":{"content":"Fix the typo in README"}}
-{"type":"assistant.turn_start","id":"evt-dddd-0003","timestamp":"2026-01-18T08:00:02.000Z","parentId":"evt-dddd-0002","data":{"turnId":"turn-1"}}
-{"type":"assistant.message","id":"evt-dddd-0004","timestamp":"2026-01-18T08:00:03.000Z","parentId":"evt-dddd-0003","data":{"messageId":"msg-301","content":"I'll fix the typo in the README file."}}
-{"type":"assistant.turn_end","id":"evt-dddd-0005","timestamp":"2026-01-18T08:00:04.000Z","parentId":"evt-dddd-0004","data":{"turnId":"turn-1"}}
+{"type": "session.start", "id": "evt-dddd-0001", "timestamp": "2026-01-18T08:00:00.000Z", "parentId": null, "data": {"sessionId": "dddd4444-0000-0000-0000-000000000004", "copilotVersion": "0.0.402", "context": {"cwd": "/Users/testuser/quick-fix"}}}
+{"type": "user.message", "id": "evt-dddd-0002", "timestamp": "2026-01-18T08:00:01.000Z", "parentId": "evt-dddd-0001", "data": {"content": "Fix the typo in README"}}
+{"type": "assistant.turn_start", "id": "evt-dddd-0003", "timestamp": "2026-01-18T08:00:02.000Z", "parentId": "evt-dddd-0002", "data": {"turnId": "turn-1"}}
+{"type": "assistant.message", "id": "evt-dddd-0004", "timestamp": "2026-01-18T08:00:03.000Z", "parentId": "evt-dddd-0003", "data": {"messageId": "msg-301", "content": "I'll fix the typo in the README file."}}
+{"type": "assistant.turn_end", "id": "evt-dddd-0005", "timestamp": "2026-01-18T08:00:04.000Z", "parentId": "evt-dddd-0004", "data": {"turnId": "turn-1"}}

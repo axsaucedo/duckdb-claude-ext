@@ -9,13 +9,13 @@ require agent_data
 # ============================================================
 
 query I
-SELECT COUNT(*) FROM read_plans(path='test/data');
+SELECT COUNT(*) FROM read_plans(path='test/data_claude');
 ----
 4
 
 # All rows have source = 'claude'
 query I
-SELECT COUNT(*) FROM read_plans(path='test/data') WHERE source != 'claude';
+SELECT COUNT(*) FROM read_plans(path='test/data_claude') WHERE source != 'claude';
 ----
 0
 
@@ -25,31 +25,31 @@ SELECT COUNT(*) FROM read_plans(path='test/data') WHERE source != 'claude';
 
 # plan_name never empty
 query I
-SELECT COUNT(*) FROM read_plans(path='test/data') WHERE plan_name = '' OR plan_name IS NULL;
+SELECT COUNT(*) FROM read_plans(path='test/data_claude') WHERE plan_name = '' OR plan_name IS NULL;
 ----
 0
 
 # file_name never empty
 query I
-SELECT COUNT(*) FROM read_plans(path='test/data') WHERE file_name = '' OR file_name IS NULL;
+SELECT COUNT(*) FROM read_plans(path='test/data_claude') WHERE file_name = '' OR file_name IS NULL;
 ----
 0
 
 # file_path never empty
 query I
-SELECT COUNT(*) FROM read_plans(path='test/data') WHERE file_path = '' OR file_path IS NULL;
+SELECT COUNT(*) FROM read_plans(path='test/data_claude') WHERE file_path = '' OR file_path IS NULL;
 ----
 0
 
 # content never empty
 query I
-SELECT COUNT(*) FROM read_plans(path='test/data') WHERE content = '' OR content IS NULL;
+SELECT COUNT(*) FROM read_plans(path='test/data_claude') WHERE content = '' OR content IS NULL;
 ----
 0
 
 # file_size always positive
 query I
-SELECT COUNT(*) FROM read_plans(path='test/data') WHERE file_size <= 0;
+SELECT COUNT(*) FROM read_plans(path='test/data_claude') WHERE file_size <= 0;
 ----
 0
 
@@ -58,7 +58,7 @@ SELECT COUNT(*) FROM read_plans(path='test/data') WHERE file_size <= 0;
 # ============================================================
 
 query I
-SELECT COUNT(*) - COUNT(DISTINCT plan_name) FROM read_plans(path='test/data');
+SELECT COUNT(*) - COUNT(DISTINCT plan_name) FROM read_plans(path='test/data_claude');
 ----
 0
 
@@ -67,7 +67,7 @@ SELECT COUNT(*) - COUNT(DISTINCT plan_name) FROM read_plans(path='test/data');
 # ============================================================
 
 query I
-SELECT COUNT(*) FROM read_plans(path='test/data') WHERE session_id IS NOT NULL;
+SELECT COUNT(*) FROM read_plans(path='test/data_claude') WHERE session_id IS NOT NULL;
 ----
 0
 
@@ -76,7 +76,7 @@ SELECT COUNT(*) FROM read_plans(path='test/data') WHERE session_id IS NOT NULL;
 # ============================================================
 
 query I
-SELECT COUNT(*) FROM read_plans(path='test/data') WHERE file_size != LENGTH(content);
+SELECT COUNT(*) FROM read_plans(path='test/data_claude') WHERE file_size != LENGTH(content);
 ----
 0
 
@@ -85,7 +85,7 @@ SELECT COUNT(*) FROM read_plans(path='test/data') WHERE file_size != LENGTH(cont
 # ============================================================
 
 query I
-SELECT COUNT(*) FROM read_plans(path='test/data')
-WHERE plan_name IN ('binary-juggling-wolf', 'bright-napping-stream', 'bright-napping-wolf', 'swift-exploring-stream');
+SELECT COUNT(*) FROM read_plans(path='test/data_claude')
+WHERE plan_name IN ('binary-exploring-hippo', 'binary-testing-wolf', 'keen-testing-wolf', 'swift-napping-dolphin');
 ----
 4

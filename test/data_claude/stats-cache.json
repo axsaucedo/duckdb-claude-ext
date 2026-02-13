@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "lastComputedDate": "2026-01-08",
+  "dailyActivity": [
+    {
+      "date": "2026-01-01",
+      "messageCount": 217,
+      "sessionCount": 2,
+      "toolCallCount": 136
+    },
+    {
+      "date": "2026-01-02",
+      "messageCount": 217,
+      "sessionCount": 3,
+      "toolCallCount": 117
+    },
+    {
+      "date": "2026-01-03",
+      "messageCount": 192,
+      "sessionCount": 4,
+      "toolCallCount": 84
+    },
+    {
+      "date": "2026-01-04",
+      "messageCount": 477,
+      "sessionCount": 1,
+      "toolCallCount": 140
+    },
+    {
+      "date": "2026-01-05",
+      "messageCount": 59,
+      "sessionCount": 5,
+      "toolCallCount": 33
+    },
+    {
+      "date": "2026-01-06",
+      "messageCount": 229,
+      "sessionCount": 2,
+      "toolCallCount": 186
+    },
+    {
+      "date": "2026-01-07",
+      "messageCount": 85,
+      "sessionCount": 1,
+      "toolCallCount": 27
+    }
+  ]
+}

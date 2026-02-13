@@ -68,22 +68,22 @@ SELECT COUNT(*) FROM read_stats(path='');
 # ============================================================
 
 query I
-SELECT COUNT(*) FROM read_conversations(path='test/data', source='copilot');
+SELECT COUNT(*) FROM read_conversations(path='test/data_claude', source='copilot');
 ----
 0
 
 query I
-SELECT COUNT(*) FROM read_plans(path='test/data', source='copilot');
+SELECT COUNT(*) FROM read_plans(path='test/data_claude', source='copilot');
 ----
 0
 
 query I
-SELECT COUNT(*) FROM read_todos(path='test/data', source='copilot');
+SELECT COUNT(*) FROM read_todos(path='test/data_claude', source='copilot');
 ----
 0
 
 query I
-SELECT COUNT(*) FROM read_history(path='test/data', source='copilot');
+SELECT COUNT(*) FROM read_history(path='test/data_claude', source='copilot');
 ----
 0
 
@@ -126,7 +126,7 @@ SELECT COUNT(*) FROM read_stats(path='test/data_copilot');
 # ============================================================
 
 query I
-SELECT COUNT(*) FROM read_conversations(path='test/data', source='unknown_garbage');
+SELECT COUNT(*) FROM read_conversations(path='test/data_claude', source='unknown_garbage');
 ----
 180
 
@@ -142,7 +142,7 @@ SELECT COUNT(*) FROM read_conversations(path='test/data_copilot', source='unknow
 # Conversations: 27 columns
 query I
 SELECT COUNT(*) FROM (
-    SELECT * FROM read_conversations(path='test/data') LIMIT 0
+    SELECT * FROM read_conversations(path='test/data_claude') LIMIT 0
 ) sub;
 ----
 0
@@ -167,7 +167,7 @@ true
 
 # Multiple WHERE conditions
 query I
-SELECT COUNT(*) > 0 FROM read_conversations(path='test/data')
+SELECT COUNT(*) > 0 FROM read_conversations(path='test/data_claude')
 WHERE message_type = 'assistant' AND model IS NOT NULL AND input_tokens > 0;
 ----
 true

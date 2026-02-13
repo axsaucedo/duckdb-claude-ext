@@ -11,7 +11,7 @@ require agent_data
 # Conversations: 180 + 53 = 233
 query I
 SELECT COUNT(*) FROM (
-    SELECT * FROM read_conversations(path='test/data')
+    SELECT * FROM read_conversations(path='test/data_claude')
     UNION ALL
     SELECT * FROM read_conversations(path='test/data_copilot')
 );
@@ -21,7 +21,7 @@ SELECT COUNT(*) FROM (
 # Plans: 4 + 1 = 5
 query I
 SELECT COUNT(*) FROM (
-    SELECT * FROM read_plans(path='test/data')
+    SELECT * FROM read_plans(path='test/data_claude')
     UNION ALL
     SELECT * FROM read_plans(path='test/data_copilot')
 );
@@ -31,22 +31,22 @@ SELECT COUNT(*) FROM (
 # History: 20 + 5 = 25
 query I
 SELECT COUNT(*) FROM (
-    SELECT * FROM read_history(path='test/data')
+    SELECT * FROM read_history(path='test/data_claude')
     UNION ALL
     SELECT * FROM read_history(path='test/data_copilot')
 );
 ----
 25
 
-# Todos: 18 + 4 = 22
+# Todos: 25 + 4 = 29
 query I
 SELECT COUNT(*) FROM (
-    SELECT * FROM read_todos(path='test/data')
+    SELECT * FROM read_todos(path='test/data_claude')
     UNION ALL
     SELECT * FROM read_todos(path='test/data_copilot')
 );
 ----
-22
+29
 
 # ============================================================
 # Source breakdown in UNION
@@ -54,7 +54,7 @@ SELECT COUNT(*) FROM (
 
 query II
 SELECT source, COUNT(*) AS cnt FROM (
-    SELECT * FROM read_conversations(path='test/data')
+    SELECT * FROM read_conversations(path='test/data_claude')
     UNION ALL
     SELECT * FROM read_conversations(path='test/data_copilot')
 ) GROUP BY source ORDER BY source;
@@ -68,7 +68,7 @@ copilot	53
 
 query I
 SELECT COUNT(*) FROM (
-    SELECT DISTINCT session_id FROM read_conversations(path='test/data') WHERE session_id != ''
+    SELECT DISTINCT session_id FROM read_conversations(path='test/data_claude') WHERE session_id != ''
     INTERSECT
     SELECT DISTINCT session_id FROM read_conversations(path='test/data_copilot') WHERE session_id != ''
 );
@@ -82,7 +82,7 @@ SELECT COUNT(*) FROM (
 # Copilot has session_start type, Claude does not
 query I
 SELECT COUNT(*) > 0 FROM (
-    SELECT * FROM read_conversations(path='test/data')
+    SELECT * FROM read_conversations(path='test/data_claude')
     UNION ALL
     SELECT * FROM read_conversations(path='test/data_copilot')
 ) WHERE message_type = 'session_start';
@@ -92,7 +92,7 @@ true
 # Only copilot rows have session_start
 query I
 SELECT COUNT(DISTINCT source) FROM (
-    SELECT * FROM read_conversations(path='test/data')
+    SELECT * FROM read_conversations(path='test/data_claude')
     UNION ALL
     SELECT * FROM read_conversations(path='test/data_copilot')
 ) WHERE message_type = 'session_start';
@@ -111,7 +111,7 @@ SELECT COUNT(*) FROM read_conversations(path='test/data_copilot') WHERE slug IS 
 
 # Repository only on Copilot, NULL on Claude
 query I
-SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE repository IS NOT NULL;
+SELECT COUNT(*) FROM read_conversations(path='test/data_claude') WHERE repository IS NOT NULL;
 ----
 0
 
@@ -121,7 +121,7 @@ SELECT COUNT(*) FROM read_conversations(path='test/data') WHERE repository IS NO
 
 query I
 SELECT COUNT(DISTINCT source) FROM (
-    SELECT source FROM read_conversations(path='test/data')
+    SELECT source FROM read_conversations(path='test/data_claude')
     UNION ALL
     SELECT source FROM read_conversations(path='test/data_copilot')
 );
@@ -130,7 +130,7 @@ SELECT COUNT(DISTINCT source) FROM (
 
 query I
 SELECT COUNT(DISTINCT source) FROM (
-    SELECT source FROM read_plans(path='test/data')
+    SELECT source FROM read_plans(path='test/data_claude')
     UNION ALL
     SELECT source FROM read_plans(path='test/data_copilot')
 );
@@ -139,7 +139,7 @@ SELECT COUNT(DISTINCT source) FROM (
 
 query I
 SELECT COUNT(DISTINCT source) FROM (
-    SELECT source FROM read_history(path='test/data')
+    SELECT source FROM read_history(path='test/data_claude')
     UNION ALL
     SELECT source FROM read_history(path='test/data_copilot')
 );
@@ -148,7 +148,7 @@ SELECT COUNT(DISTINCT source) FROM (
 
 query I
 SELECT COUNT(DISTINCT source) FROM (
-    SELECT source FROM read_todos(path='test/data')
+    SELECT source FROM read_todos(path='test/data_claude')
     UNION ALL
     SELECT source FROM read_todos(path='test/data_copilot')
 );

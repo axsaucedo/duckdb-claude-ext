@@ -9,13 +9,13 @@ require agent_data
 # ============================================================
 
 query I
-SELECT COUNT(*) FROM read_todos(path='test/data');
+SELECT COUNT(*) FROM read_todos(path='test/data_claude');
 ----
-18
+25
 
 # All rows have source = 'claude'
 query I
-SELECT COUNT(*) FROM read_todos(path='test/data') WHERE source != 'claude';
+SELECT COUNT(*) FROM read_todos(path='test/data_claude') WHERE source != 'claude';
 ----
 0
 
@@ -24,29 +24,29 @@ SELECT COUNT(*) FROM read_todos(path='test/data') WHERE source != 'claude';
 # ============================================================
 
 query I
-SELECT COUNT(*) FROM read_todos(path='test/data') WHERE status = 'in_progress';
+SELECT COUNT(*) FROM read_todos(path='test/data_claude') WHERE status = 'in_progress';
 ----
 9
 
 query I
-SELECT COUNT(*) FROM read_todos(path='test/data') WHERE status = 'completed';
+SELECT COUNT(*) FROM read_todos(path='test/data_claude') WHERE status = 'completed';
 ----
 7
 
 query I
-SELECT COUNT(*) FROM read_todos(path='test/data') WHERE status = 'pending';
+SELECT COUNT(*) FROM read_todos(path='test/data_claude') WHERE status = 'pending';
 ----
-2
+9
 
 # No parse errors
 query I
-SELECT COUNT(*) FROM read_todos(path='test/data') WHERE status = '_parse_error';
+SELECT COUNT(*) FROM read_todos(path='test/data_claude') WHERE status = '_parse_error';
 ----
 0
 
 # Only valid statuses
 query I
-SELECT COUNT(*) FROM read_todos(path='test/data')
+SELECT COUNT(*) FROM read_todos(path='test/data_claude')
 WHERE status NOT IN ('pending', 'in_progress', 'completed', '_parse_error');
 ----
 0
@@ -57,25 +57,25 @@ WHERE status NOT IN ('pending', 'in_progress', 'completed', '_parse_error');
 
 # session_id never NULL
 query I
-SELECT COUNT(*) FROM read_todos(path='test/data') WHERE session_id IS NULL;
+SELECT COUNT(*) FROM read_todos(path='test/data_claude') WHERE session_id IS NULL;
 ----
 0
 
 # agent_id never NULL for Claude
 query I
-SELECT COUNT(*) FROM read_todos(path='test/data') WHERE agent_id IS NULL;
+SELECT COUNT(*) FROM read_todos(path='test/data_claude') WHERE agent_id IS NULL;
 ----
 0
 
 # file_name never empty
 query I
-SELECT COUNT(*) FROM read_todos(path='test/data') WHERE file_name = '' OR file_name IS NULL;
+SELECT COUNT(*) FROM read_todos(path='test/data_claude') WHERE file_name = '' OR file_name IS NULL;
 ----
 0
 
 # content never empty
 query I
-SELECT COUNT(*) FROM read_todos(path='test/data') WHERE content = '' OR content IS NULL;
+SELECT COUNT(*) FROM read_todos(path='test/data_claude') WHERE content = '' OR content IS NULL;
 ----
 0
 
@@ -85,18 +85,18 @@ SELECT COUNT(*) FROM read_todos(path='test/data') WHERE content = '' OR content 
 
 # 5 distinct todo files
 query I
-SELECT COUNT(DISTINCT file_name) FROM read_todos(path='test/data');
+SELECT COUNT(DISTINCT file_name) FROM read_todos(path='test/data_claude');
 ----
 5
 
 # 5 distinct sessions
 query I
-SELECT COUNT(DISTINCT session_id) FROM read_todos(path='test/data');
+SELECT COUNT(DISTINCT session_id) FROM read_todos(path='test/data_claude');
 ----
 5
 
 # item_index starts at 0
 query I
-SELECT MIN(item_index) FROM read_todos(path='test/data');
+SELECT MIN(item_index) FROM read_todos(path='test/data_claude');
 ----
 0

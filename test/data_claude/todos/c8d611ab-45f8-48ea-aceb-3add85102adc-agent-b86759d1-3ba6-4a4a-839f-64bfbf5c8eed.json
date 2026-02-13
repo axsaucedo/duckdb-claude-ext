@@ -1,0 +1,32 @@
+[
+  {
+    "content": "Task 1: Implement feature A",
+    "status": "in_progress",
+    "activeForm": "Working on task 1"
+  },
+  {
+    "content": "Task 2: Implement feature B",
+    "status": "completed",
+    "activeForm": "Working on task 2"
+  },
+  {
+    "content": "Task 3: Implement feature C",
+    "status": "in_progress",
+    "activeForm": "Working on task 3"
+  },
+  {
+    "content": "Task 4: Implement feature D",
+    "status": "in_progress",
+    "activeForm": "Working on task 4"
+  },
+  {
+    "content": "Task 5: Implement feature E",
+    "status": "pending",
+    "activeForm": "Working on task 5"
+  },
+  {
+    "content": "Task 6: Implement feature F",
+    "status": "pending",
+    "activeForm": "Working on task 6"
+  }
+]

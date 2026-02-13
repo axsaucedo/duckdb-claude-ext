@@ -1,0 +1,17 @@
+[
+  {
+    "content": "Task 1: Implement feature A",
+    "status": "pending",
+    "activeForm": "Working on task 1"
+  },
+  {
+    "content": "Task 2: Implement feature B",
+    "status": "pending",
+    "activeForm": "Working on task 2"
+  },
+  {
+    "content": "Task 3: Implement feature C",
+    "status": "pending",
+    "activeForm": "Working on task 3"
+  }
+]
