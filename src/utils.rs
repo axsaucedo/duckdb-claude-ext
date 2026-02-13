@@ -13,11 +13,6 @@ pub fn resolve_data_path(path: Option<&str>) -> PathBuf {
     }
 }
 
-/// Legacy alias for backward compatibility within modules.
-pub fn resolve_claude_path(path: Option<&str>) -> PathBuf {
-    resolve_data_path(path)
-}
-
 /// Expand ~ at the start of a path to the user's home directory.
 fn expand_tilde(path: &str) -> PathBuf {
     if path.starts_with("~/") || path == "~" {
@@ -293,7 +288,7 @@ pub fn copilot_history_file_path(base_path: &Path) -> PathBuf {
 }
 
 /// Read workspace.yaml for a session directory to get metadata.
-pub fn read_workspace_yaml(session_dir: &Path) -> Option<crate::types::WorkspaceYaml> {
+pub fn read_workspace_yaml(session_dir: &Path) -> Option<crate::types::copilot::WorkspaceYaml> {
     let yaml_path = session_dir.join("workspace.yaml");
     let content = std::fs::read_to_string(&yaml_path).ok()?;
     serde_yaml::from_str(&content).ok()
