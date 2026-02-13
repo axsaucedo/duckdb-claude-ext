@@ -1,8 +1,10 @@
 # agent_data — DuckDB Extension for AI Agent Session Data
 
-A [DuckDB](https://duckdb.org/) extension for querying AI coding agent session data with SQL. Read conversations, plans, todos, history, and usage stats directly from your local agent data directories.
+A [DuckDB](https://duckdb.org/) extension for querying, analysing and inspecting AI coding agents history. Read conversations, plans, todos, history, and usage stats directly from your local agent data directories.
 
 **Supported agents:** [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`~/.claude`) and [GitHub Copilot CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli) (`~/.copilot`).
+
+> OpenAI Codex and Gemini CLI Coming Soon™.
 
 ## Installing
 
@@ -13,7 +15,9 @@ LOAD agent_data;
 
 ## Quick Start
 
-All functions read from the default agent directory (`~/.claude` for Claude Code, `~/.copilot` for Copilot) when no `path` is provided. The provider is **auto-detected** from the directory structure.
+All functions read from the default agent directory (`~/.claude` for Claude Code, `~/.copilot` for Copilot) when no `path` is provided. 
+
+The provider is **auto-detected** from the directory structure.
 
 ```sql
 -- How many conversations have I had with Claude?
@@ -27,17 +31,17 @@ FROM read_stats()
 ORDER BY date DESC
 LIMIT 7;
 
--- Which tools does the assistant use most?
+-- Which tools does github copilot use most?
 SELECT tool_name, COUNT(*) AS uses
-FROM read_conversations()
+FROM read_conversations('~/.copilot')
 WHERE tool_name IS NOT NULL
 GROUP BY tool_name
 ORDER BY uses DESC
 LIMIT 10;
 
--- What are my active todos?
+-- What are my active todos in my custom claude path?
 SELECT content, status
-FROM read_todos()
+FROM read_todos('~/work_folder/.claude')
 WHERE status != 'completed'
 ORDER BY item_index;
 
@@ -77,7 +81,7 @@ All functions accept two optional parameters:
 
 Every table includes a **`source`** column (`'claude'` or `'copilot'`) as the first column.
 
-### `read_conversations([path], [source])`
+### `read_conversations([path (opt)], [source (opt)])`
 
 Reads conversation/event data.
 - **Claude:** JSONL files from `projects/<project>/<session>.jsonl`
