@@ -228,12 +228,12 @@ COLUMN_MAP = {
 
 available_columns = COLUMN_MAP.get(selected_table_name, ["*"])
 selected_columns = st.sidebar.multiselect(
-    "Columns", available_columns, default=["source"]
+    "Columns", available_columns, default=available_columns
 )
 
-where_clause = st.sidebar.text_input("WHERE clause (optional)", "")
-order_by = st.sidebar.text_input("ORDER BY (optional)", "")
-limit_val = st.sidebar.number_input("LIMIT", min_value=0, max_value=10000, value=100)
+where_clause = st.sidebar.text_input("WHERE clause (optional)", "", help="e.g. source='claude' AND message_type='user'")
+order_by = st.sidebar.text_input("ORDER BY (optional)", "", help="e.g. timestamp DESC")
+limit_val = st.sidebar.number_input("LIMIT (0 = no limit)", min_value=0, max_value=10000, value=100)
 
 if st.sidebar.button("Replace & Run", type="primary", use_container_width=True):
     cols = ", ".join(selected_columns) if selected_columns else "*"

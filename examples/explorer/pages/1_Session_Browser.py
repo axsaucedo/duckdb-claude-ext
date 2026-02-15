@@ -22,21 +22,21 @@ claude_path, copilot_path = get_data_paths()
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 BADGE_COLORS = {
-    "user":      ("#e879f9", "#3b0764"),
-    "assistant": ("#f97316", "#431407"),
+    "user":      ("#a3e635", "#1a2e05"),
+    "assistant": ("#fbbf24", "#451a03"),
     "system":    ("#64748b", "#1e293b"),
     "summary":   ("#64748b", "#1e293b"),
     "tool_start":  ("#22d3ee", "#083344"),
     "tool_result": ("#22d3ee", "#083344"),
-    "session_start":  ("#a3e635", "#1a2e05"),
-    "session_resume": ("#a3e635", "#1a2e05"),
+    "session_start":  ("#e879f9", "#3b0764"),
+    "session_resume": ("#e879f9", "#3b0764"),
     "session_info":   ("#38bdf8", "#0c4a6e"),
     "session_error":  ("#ef4444", "#450a0a"),
     "turn_start":  ("#94a3b8", "#1e293b"),
     "turn_end":    ("#94a3b8", "#1e293b"),
     "reasoning":   ("#a78bfa", "#2e1065"),
     "truncation":  ("#fbbf24", "#451a03"),
-    "model_change": ("#fbbf24", "#451a03"),
+    "model_change": ("#f97316", "#431407"),
     "compaction_start":    ("#fbbf24", "#451a03"),
     "compaction_complete": ("#fbbf24", "#451a03"),
     "abort": ("#ef4444", "#450a0a"),
@@ -236,9 +236,24 @@ div[data-testid="stVerticalBlock"] .timeline-scroll {
 """, unsafe_allow_html=True)
 
 
-# ── Sidebar: display settings only ─────────────────────────────────────────
+# ── Sidebar: settings and data source ──────────────────────────────────────
 st.sidebar.header("📋 Settings")
 truncate_content = st.sidebar.checkbox("Truncate long strings", value=True)
+
+st.sidebar.divider()
+st.sidebar.header("Data Source")
+source_choice = st.sidebar.radio(
+    "Source",
+    ["Claude", "Copilot", "Both"],
+    index=0,
+    horizontal=True,
+)
+
+# Reset when source changes
+if st.session_state.get("_prev_source") != source_choice:
+    st.session_state["_prev_source"] = source_choice
+    st.session_state["selected_event_idx"] = None
+    st.session_state.pop("selected_session_key", None)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -249,20 +264,6 @@ truncate_content = st.sidebar.checkbox("Truncate long strings", value=True)
 has_selection = st.session_state.get("selected_session_key") is not None
 
 with st.expander("📋 Session Browser — Select a session", expanded=not has_selection):
-    # ── Source selector ─────────────────────────────────────────────────
-    source_choice = st.radio(
-        "Data source",
-        ["Claude", "Copilot", "Both"],
-        index=0,
-        horizontal=True,
-    )
-
-    # Reset when source changes
-    if st.session_state.get("_prev_source") != source_choice:
-        st.session_state["_prev_source"] = source_choice
-        st.session_state["selected_event_idx"] = None
-        st.session_state.pop("selected_session_key", None)
-
     paths_to_load = []
     if source_choice in ("Claude", "Both"):
         paths_to_load.append(claude_path)
@@ -286,7 +287,7 @@ with st.expander("📋 Session Browser — Select a session", expanded=not has_s
         "first_ts", ascending=False
     )
 
-    # ── Filters row ─────────────────────────────────────────────────────
+    # ── Filters row (single compact row) ───────────────────────────────
     raw_projects = sorted(sessions_df["project_path"].dropna().unique())
     project_short_map = {}
     for fp in raw_projects:
@@ -296,36 +297,30 @@ with st.expander("📋 Session Browser — Select a session", expanded=not has_s
             short = "/".join(parts[-2:]) if len(parts) >= 2 else short
         project_short_map[short] = fp
 
-    fc1, fc2 = st.columns(2)
+    fc1, fc2, fc3, fc4 = st.columns([3, 2, 3, 1])
     with fc1:
         search_text = st.text_input(
-            "🔍 Search",
-            placeholder="Search by project, message, session ID…",
+            "Filter",
+            placeholder="Filter by terms…",
             label_visibility="collapsed",
         )
     with fc2:
         exclude_text = st.text_input(
-            "🚫 Exclude",
+            "Exclude",
             placeholder="Exclude terms…",
             label_visibility="collapsed",
         )
-
-    fc3, fc4, fc5 = st.columns([3, 2, 2])
     with fc3:
         selected_projects = st.multiselect(
             "Projects",
             options=list(project_short_map.keys()),
             placeholder="All projects",
+            label_visibility="collapsed",
         )
     with fc4:
         max_events_val = sessions_df["event_count"].max()
         max_events_val = int(max_events_val) if _is_valid(max_events_val) else 1
-        min_events = st.number_input("Min events", min_value=0, max_value=max(max_events_val, 1), value=0)
-    with fc5:
-        if st.button("✕ Clear Selection & Filters", use_container_width=True):
-            st.session_state.pop("selected_session_key", None)
-            st.session_state["selected_event_idx"] = None
-            st.rerun()
+        min_events = st.number_input("Min", min_value=0, max_value=max(max_events_val, 1), value=0, label_visibility="collapsed")
 
     # Apply filters
     filtered = sessions_df.copy()
@@ -374,7 +369,7 @@ with st.expander("📋 Session Browser — Select a session", expanded=not has_s
         "Source": st.column_config.TextColumn(width="small"),
         "Last Active": st.column_config.TextColumn(width="small"),
         "Events": st.column_config.NumberColumn(width="small"),
-        "Project": st.column_config.TextColumn(width="medium"),
+        "Project": st.column_config.TextColumn(width="small"),
         "First Message": st.column_config.TextColumn(width="large"),
     }
 
@@ -383,6 +378,7 @@ with st.expander("📋 Session Browser — Select a session", expanded=not has_s
         display_df,
         use_container_width=True,
         hide_index=True,
+        height=212,  # ~5 rows
         selection_mode="single-row",
         on_select="rerun",
         column_config=col_config,
@@ -500,9 +496,9 @@ default_types = [t for t in ["user", "assistant"] if t in all_types]
 fc = st.columns([4, 4, 2])
 with fc[0]:
     search_q = st.text_input(
-        "🔍 Search events", "",
+        "Search events",
+        "",
         placeholder="message, tool name…",
-        label_visibility="collapsed",
     )
 with fc[1]:
     type_filter = st.multiselect(
@@ -512,7 +508,8 @@ with fc[1]:
         placeholder="All types",
     )
 with fc[2]:
-    if st.button("✕ Clear", key="clear_timeline"):
+    st.markdown("&nbsp;", unsafe_allow_html=True)  # spacer for label alignment
+    if st.button("✕ Clear selection", key="clear_timeline", use_container_width=True):
         st.session_state["selected_event_idx"] = None
         st.rerun()
 
