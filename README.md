@@ -8,14 +8,38 @@ A [DuckDB extension](https://duckdb.org/community_extensions/list_of_extensions)
 
 Written in 🦀 Rust.
 
-## Installing
+## Quickstart
 
-```sql
-INSTALL agent_data FROM community;
+<table>
+<tr>
+<td>
+
+<h4> Load Extension </h4>
+
+<pre><code class="language-sql">INSTALL agent_data FROM community;
 LOAD agent_data;
-```
+</code></pre>
 
-## Quick Start
+<h4> Run Query</h4>
+
+<pre><code class="language-sql">SELECT c.*, h.display
+FROM read_conversations(path='~/.claude') c
+JOIN read_history(path='~/.claude') h
+ON c.session_id = h.session_id;
+</code></pre>
+
+</td>
+<td>
+
+<h4>Or try the <a href="">Streamlit Example</a></h4>
+
+<img src="docs/streamlit.gif">
+
+</td>
+</tr>
+</table>
+
+## Overview
 
 All functions read from the default agent directory (`~/.claude` for Claude Code, `~/.copilot` for Copilot) when no `path` is provided. 
 
