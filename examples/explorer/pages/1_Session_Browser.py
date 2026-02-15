@@ -14,8 +14,6 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from db import get_connection, get_data_paths, load_session_index, load_session_events
 
-st.set_page_config(page_title="Session Browser", page_icon="📋", layout="wide")
-
 con = get_connection()
 claude_path, copilot_path = get_data_paths()
 
@@ -237,11 +235,11 @@ div[data-testid="stVerticalBlock"] .timeline-scroll {
 
 
 # ── Sidebar: settings and data source ──────────────────────────────────────
-st.sidebar.header("📋 Settings")
+st.sidebar.header("⚙️ Settings")
 truncate_content = st.sidebar.checkbox("Truncate long strings", value=True)
 
 st.sidebar.divider()
-st.sidebar.header("Data Source")
+st.sidebar.header("📡 Data Source")
 source_choice = st.sidebar.radio(
     "Source",
     ["Claude", "Copilot", "Both"],
@@ -423,7 +421,7 @@ hcol1, hcol2 = st.columns([6, 2])
 with hcol1:
     st.markdown("### 📋 Session Timeline")
 with hcol2:
-    if st.button("🔄 Pick Another Session", type="primary", use_container_width=True):
+    if st.button("🔄 Pick Another Session", type="secondary", use_container_width=True):
         st.session_state.pop("selected_session_key", None)
         st.session_state["selected_event_idx"] = None
         st.session_state["picker_reset_counter"] += 1
@@ -611,7 +609,7 @@ with col_list:
                     summary,
                     key=f"sel_{idx}",
                     use_container_width=True,
-                    type="primary" if is_selected else "secondary",
+                    type="secondary" if is_selected else "tertiary",
                 ):
                     st.session_state["selected_event_idx"] = idx
                     st.rerun()
