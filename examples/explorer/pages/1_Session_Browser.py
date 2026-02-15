@@ -50,8 +50,15 @@ def badge_html(msg_type: str) -> str:
     )
 
 
-def format_delta_ms(ms: float) -> str:
-    if not ms or ms < 0:
+def format_delta_ms(ms) -> str:
+    if ms is None:
+        return ""
+    try:
+        if pd.isna(ms):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    if ms < 0:
         return ""
     abs_ms = abs(ms)
     if abs_ms < 1000:
@@ -63,8 +70,15 @@ def format_delta_ms(ms: float) -> str:
     return f"+{m}m {s:02d}s"
 
 
-def format_duration(ms: float) -> str:
-    if not ms or ms <= 0:
+def format_duration(ms) -> str:
+    if ms is None:
+        return ""
+    try:
+        if pd.isna(ms):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    if ms <= 0:
         return ""
     abs_ms = abs(ms)
     if abs_ms < 60_000:
@@ -155,12 +169,25 @@ def summarize_event(row: pd.Series) -> str:
     return text[:max_len] + "…" if len(text) > max_len else text
 
 
+def _is_valid(val) -> bool:
+    """Check if a value is non-null (handles NaT, NaN, None safely)."""
+    if val is None:
+        return False
+    try:
+        if pd.isna(val):
+            return False
+    except (TypeError, ValueError):
+        pass
+    return True
+
+
 def parse_ts(ts_str) -> datetime | None:
-    if not ts_str or str(ts_str) == "nan" or str(ts_str) == "None":
+    if not _is_valid(ts_str):
+        return None
+    s = str(ts_str).strip()
+    if not s or s in ("nan", "None", "NaT", ""):
         return None
     try:
-        s = str(ts_str).strip()
-        # Handle ISO 8601 with various suffixes
         for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ",
                      "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S",
                      "%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z"):
@@ -168,7 +195,10 @@ def parse_ts(ts_str) -> datetime | None:
                 return datetime.strptime(s, fmt)
             except ValueError:
                 continue
-        return pd.to_datetime(s).to_pydatetime()
+        result = pd.to_datetime(s)
+        if pd.isna(result):
+            return None
+        return result.to_pydatetime()
     except Exception:
         return None
 
@@ -294,7 +324,9 @@ if projects:
     if selected_project != "All":
         sessions_df = sessions_df[sessions_df["project_path"] == selected_project]
 
-min_events = st.sidebar.slider("Min events", 0, max(int(sessions_df["event_count"].max()), 1), 0)
+max_events = sessions_df["event_count"].max()
+max_events = int(max_events) if _is_valid(max_events) else 1
+min_events = st.sidebar.slider("Min events", 0, max(max_events, 1), 0)
 if min_events > 0:
     sessions_df = sessions_df[sessions_df["event_count"] >= min_events]
 
@@ -307,7 +339,8 @@ session_map = {}
 for _, row in sessions_df.iterrows():
     proj = row["project_path"] or "unknown"
     proj_short = proj.split("/")[-1] if "/" in str(proj) else proj
-    ts = str(row["first_ts"])[:16] if row["first_ts"] else "?"
+    ts_val = row["first_ts"]
+    ts = str(ts_val)[:16] if _is_valid(ts_val) else "?"
     label = f"{proj_short} — {row['event_count']} events — {ts}"
     session_labels.append(label)
     session_map[label] = (row["session_id"], row["_path"], row["source"])
@@ -339,24 +372,25 @@ events_df["_ts"] = events_df["timestamp"].apply(parse_ts)
 
 # Calculate deltas
 deltas_ms = []
-first_ts = events_df["_ts"].dropna().iloc[0] if events_df["_ts"].notna().any() else None
+valid_ts = events_df["_ts"].apply(_is_valid)
+first_ts = events_df.loc[valid_ts, "_ts"].iloc[0] if valid_ts.any() else None
 for i, row in events_df.iterrows():
     ts = row["_ts"]
-    if ts is None or first_ts is None:
+    if not _is_valid(ts) or not _is_valid(first_ts):
         deltas_ms.append(None)
         continue
     if i == events_df.index[0]:
         deltas_ms.append(0)
     else:
         prev_ts = events_df.loc[events_df.index[events_df.index.get_loc(i) - 1], "_ts"]
-        if prev_ts:
+        if _is_valid(prev_ts):
             deltas_ms.append((ts - prev_ts).total_seconds() * 1000)
         else:
             deltas_ms.append(None)
 
 events_df["_delta_ms"] = deltas_ms
 events_df["_offset_ms"] = events_df["_ts"].apply(
-    lambda t: (t - first_ts).total_seconds() * 1000 if t and first_ts else None
+    lambda t: (t - first_ts).total_seconds() * 1000 if _is_valid(t) and _is_valid(first_ts) else None
 )
 
 # ── Top filter bar (Chronicle-style) ────────────────────────────────────
@@ -400,8 +434,12 @@ if search_query:
     filtered_df = filtered_df[mask]
 
 # ── Stats bar ───────────────────────────────────────────────────────────
-last_ts = events_df["_ts"].dropna().iloc[-1] if events_df["_ts"].notna().any() else None
-duration_ms = (last_ts - first_ts).total_seconds() * 1000 if first_ts and last_ts else 0
+valid_ts_mask = events_df["_ts"].apply(_is_valid)
+last_ts = events_df.loc[valid_ts_mask, "_ts"].iloc[-1] if valid_ts_mask.any() else None
+try:
+    duration_ms = (last_ts - first_ts).total_seconds() * 1000 if _is_valid(first_ts) and _is_valid(last_ts) else 0
+except Exception:
+    duration_ms = 0
 
 st.markdown(
     f'<div class="stats-bar">'
@@ -418,46 +456,55 @@ col_list, col_detail = st.columns([3, 2])
 if "selected_event_idx" not in st.session_state:
     st.session_state["selected_event_idx"] = None
 
+# Helper to safely get delta value
+def _safe_delta(val):
+    if val is None:
+        return None
+    try:
+        if pd.isna(val):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return val
+
 with col_list:
-    # Group events by day
-    current_day = None
+    # Build a display dataframe for the event list
+    display_rows = []
     for idx, row in filtered_df.iterrows():
         ts = row["_ts"]
-        if ts:
-            day = ts.strftime("%Y-%m-%d")
-            if day != current_day:
-                current_day = day
-                st.markdown(f'<div class="day-sep">{day}</div>', unsafe_allow_html=True)
-
-        # Build event row
-        ts_str = ts.strftime("%H:%M:%S.%f")[:-3] if ts else "—"
-        delta_str = format_delta_ms(row.get("_delta_ms")) if row.get("_delta_ms") else ""
-        offset_str = f"t{format_delta_ms(row.get('_offset_ms'))}" if row.get("_offset_ms") else ""
-        badge = badge_html(row["message_type"])
+        ts_str = ts.strftime("%H:%M:%S") if _is_valid(ts) else "—"
+        delta_val = _safe_delta(row.get("_delta_ms"))
+        delta_str = format_delta_ms(delta_val) if delta_val else ""
+        msg_type = row.get("message_type", "")
         summary = summarize_event(row)
+        display_rows.append({
+            "_idx": idx,
+            "Time": ts_str,
+            "Delta": delta_str,
+            "Type": msg_type,
+            "Summary": summary[:150],
+        })
 
-        # Clicking a button selects the event
-        btn_key = f"evt_{idx}"
-        is_selected = st.session_state.get("selected_event_idx") == idx
+    if not display_rows:
+        st.info("No events match filters.")
+    else:
+        display_df = pd.DataFrame(display_rows)
 
-        container = st.container()
-        with container:
-            c1, c2 = st.columns([1, 4])
-            with c1:
-                st.markdown(
-                    f'<div class="event-time">'
-                    f'<div>{ts_str}</div>'
-                    f'<div class="delta">{delta_str}</div>'
-                    f'<div class="offset">{offset_str}</div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-            with c2:
-                st.markdown(f'{badge}', unsafe_allow_html=True)
-                if st.button(summary[:120], key=btn_key, use_container_width=True,
-                             type="primary" if is_selected else "secondary"):
-                    st.session_state["selected_event_idx"] = idx
-                    st.rerun()
+        # Render as interactive dataframe with row selection
+        event_selection = st.dataframe(
+            display_df[["Time", "Delta", "Type", "Summary"]],
+            width="stretch",
+            hide_index=True,
+            height=min(600, 35 * len(display_rows) + 38),
+            on_select="rerun",
+            selection_mode="single-row",
+        )
+
+        # Handle selection
+        if event_selection and event_selection.selection and event_selection.selection.rows:
+            selected_row_num = event_selection.selection.rows[0]
+            if selected_row_num < len(display_rows):
+                st.session_state["selected_event_idx"] = display_rows[selected_row_num]["_idx"]
 
 
 # ── Detail panel (right column) ─────────────────────────────────────────
@@ -542,7 +589,7 @@ with col_detail:
         ]
         for label, col_name in meta_fields:
             val = event.get(col_name)
-            if val is not None and str(val) not in ("nan", "None", ""):
+            if _is_valid(val) and str(val) not in ("nan", "None", "", "<NA>"):
                 st.text(f"{label}: {val}")
 
         # ── Raw JSON ────────────────────────────────────────────────────
@@ -552,7 +599,7 @@ with col_detail:
                 if col_name.startswith("_"):
                     continue
                 v = event[col_name]
-                if v is not None and str(v) not in ("nan", "None"):
+                if _is_valid(v) and str(v) not in ("nan", "None", "<NA>"):
                     if col_name == "tool_input" and v:
                         try:
                             raw[col_name] = json.loads(str(v))
