@@ -1,12 +1,14 @@
 """Session Browser — Chronicle-style session explorer.
 
-Two-phase browsing: pick a session, then explore its event timeline
-with filters, color-coded badges, time deltas, and a detail panel.
+Browse sessions with a chat-like event timeline and detail panel.
+Matches the Copilot Chronicle UI pattern: timestamps, colored pill badges,
+truncated content previews, and a right-side detail panel.
 """
 
 import streamlit as st
 import pandas as pd
 import json
+import html
 import sys, os
 from datetime import datetime
 
@@ -18,159 +20,31 @@ st.set_page_config(page_title="Session Browser", page_icon="📋", layout="wide"
 con = get_connection()
 claude_path, copilot_path = get_data_paths()
 
-# ── colour helpers ──────────────────────────────────────────────────────────
+# ── Helpers ─────────────────────────────────────────────────────────────────
+
 BADGE_COLORS = {
-    "user":      ("#e879f9", "#1a0820"),   # purple
-    "assistant": ("#f97316", "#1c0f00"),   # orange
-    "system":    ("#64748b", "#0f172a"),   # slate
-    "summary":   ("#64748b", "#0f172a"),
-    "tool_start":  ("#22d3ee", "#042f2e"), # cyan
-    "tool_result": ("#22d3ee", "#042f2e"),
-    "session_start":  ("#a3e635", "#1a2e05"), # lime
+    "user":      ("#e879f9", "#3b0764"),
+    "assistant": ("#f97316", "#431407"),
+    "system":    ("#64748b", "#1e293b"),
+    "summary":   ("#64748b", "#1e293b"),
+    "tool_start":  ("#22d3ee", "#083344"),
+    "tool_result": ("#22d3ee", "#083344"),
+    "session_start":  ("#a3e635", "#1a2e05"),
     "session_resume": ("#a3e635", "#1a2e05"),
-    "session_info":   ("#38bdf8", "#0c1929"), # sky
-    "session_error":  ("#ef4444", "#2d0a0a"), # red
-    "turn_start":  ("#94a3b8", "#1e293b"), # gray
+    "session_info":   ("#38bdf8", "#0c4a6e"),
+    "session_error":  ("#ef4444", "#450a0a"),
+    "turn_start":  ("#94a3b8", "#1e293b"),
     "turn_end":    ("#94a3b8", "#1e293b"),
-    "reasoning":   ("#a78bfa", "#1e1040"), # violet
-    "truncation":  ("#fbbf24", "#1c1a05"), # amber
-    "model_change": ("#fbbf24", "#1c1a05"),
-    "compaction_start":    ("#fbbf24", "#1c1a05"),
-    "compaction_complete": ("#fbbf24", "#1c1a05"),
-    "abort": ("#ef4444", "#2d0a0a"),
+    "reasoning":   ("#a78bfa", "#2e1065"),
+    "truncation":  ("#fbbf24", "#451a03"),
+    "model_change": ("#fbbf24", "#451a03"),
+    "compaction_start":    ("#fbbf24", "#451a03"),
+    "compaction_complete": ("#fbbf24", "#451a03"),
+    "abort": ("#ef4444", "#450a0a"),
 }
-
-def badge_html(msg_type: str) -> str:
-    fg, bg = BADGE_COLORS.get(msg_type, ("#94a3b8", "#1e293b"))
-    return (
-        f'<span style="display:inline-block;padding:2px 8px;border-radius:4px;'
-        f'font-size:12px;font-family:monospace;font-weight:600;'
-        f'color:{fg};background:{bg};border:1px solid {fg}40;">'
-        f'{msg_type}</span>'
-    )
-
-
-def format_delta_ms(ms) -> str:
-    if ms is None:
-        return ""
-    try:
-        if pd.isna(ms):
-            return ""
-    except (TypeError, ValueError):
-        pass
-    if ms < 0:
-        return ""
-    abs_ms = abs(ms)
-    if abs_ms < 1000:
-        return f"+{int(abs_ms)}ms"
-    if abs_ms < 60_000:
-        return f"+{abs_ms/1000:.1f}s"
-    m = int(abs_ms // 60_000)
-    s = int((abs_ms % 60_000) // 1000)
-    return f"+{m}m {s:02d}s"
-
-
-def format_duration(ms) -> str:
-    if ms is None:
-        return ""
-    try:
-        if pd.isna(ms):
-            return ""
-    except (TypeError, ValueError):
-        pass
-    if ms <= 0:
-        return ""
-    abs_ms = abs(ms)
-    if abs_ms < 60_000:
-        return f"{abs_ms/1000:.1f}s"
-    if abs_ms < 3_600_000:
-        m = int(abs_ms // 60_000)
-        s = int((abs_ms % 60_000) // 1000)
-        return f"{m}m {s:02d}s"
-    h = int(abs_ms // 3_600_000)
-    m = int((abs_ms % 3_600_000) // 60_000)
-    return f"{h}h {m}m"
-
-
-def summarize_event(row: pd.Series) -> str:
-    """Create a one-line summary of an event, similar to Chronicle."""
-    msg_type = row.get("message_type", "")
-    content = str(row.get("message_content", "") or "")
-    tool = str(row.get("tool_name", "") or "")
-    role = str(row.get("message_role", "") or "")
-
-    max_len = 200
-
-    if msg_type == "user":
-        text = content.replace("\n", " ").strip()
-        prefix = "User: " if role == "user" else ""
-        full = f"{prefix}{text}"
-        return full[:max_len] + "…" if len(full) > max_len else full
-
-    if msg_type == "assistant":
-        if tool:
-            # Tool call from assistant
-            return f"Assistant calls: {tool}"
-        text = content.replace("\n", " ").strip()
-        full = f"Assistant: {text}" if text else "Assistant: (no content)"
-        return full[:max_len] + "…" if len(full) > max_len else full
-
-    if msg_type in ("tool_start", "tool_result"):
-        tool_input = str(row.get("tool_input", "") or "")
-        if msg_type == "tool_start":
-            # Show truncated arguments
-            args_preview = ""
-            if tool_input and tool_input != "None":
-                try:
-                    args = json.loads(tool_input)
-                    args_preview = ", ".join(f"{k}=…" for k in list(args.keys())[:2])
-                except (json.JSONDecodeError, TypeError):
-                    args_preview = "…"
-            return f"⚡ {tool}({args_preview})"
-        else:
-            return f"✓ {tool} completed"
-
-    if msg_type == "session_start":
-        version = row.get("version", "")
-        return f"Session started — v{version}" if version else "Session started"
-
-    if msg_type == "session_info":
-        text = content.replace("\n", " ").strip()
-        return text[:max_len] + "…" if len(text) > max_len else text
-
-    if msg_type == "session_error":
-        text = content.replace("\n", " ").strip()
-        return f"Error: {text[:max_len]}"
-
-    if msg_type == "turn_start":
-        return "Turn started"
-
-    if msg_type == "turn_end":
-        return "Turn ended"
-
-    if msg_type == "truncation":
-        tokens = row.get("input_tokens", "")
-        return f"Truncation: {tokens} tokens removed" if tokens else "Truncation"
-
-    if msg_type == "reasoning":
-        text = content.replace("\n", " ").strip()
-        full = f"Reasoning: {text}"
-        return full[:max_len] + "…" if len(full) > max_len else full
-
-    if msg_type == "system":
-        text = content.replace("\n", " ").strip()
-        return f"System: {text[:max_len]}"
-
-    if msg_type == "summary":
-        return "Conversation summary"
-
-    # Generic fallback
-    text = content.replace("\n", " ").strip() if content else msg_type
-    return text[:max_len] + "…" if len(text) > max_len else text
 
 
 def _is_valid(val) -> bool:
-    """Check if a value is non-null (handles NaT, NaN, None safely)."""
     if val is None:
         return False
     try:
@@ -203,44 +77,113 @@ def parse_ts(ts_str) -> datetime | None:
         return None
 
 
-# ── CSS for Chronicle-like dark theme ───────────────────────────────────────
+def badge_html(msg_type: str) -> str:
+    fg, bg = BADGE_COLORS.get(msg_type, ("#94a3b8", "#1e293b"))
+    return (
+        f'<span style="display:inline-block;padding:2px 8px;border-radius:12px;'
+        f'font-size:11px;font-family:monospace;font-weight:600;white-space:nowrap;'
+        f'color:{fg};background:{bg};border:1px solid {fg}50;">'
+        f'{html.escape(msg_type)}</span>'
+    )
+
+
+def format_delta(ms) -> str:
+    if not _is_valid(ms) or ms <= 0:
+        return ""
+    if ms < 1000:
+        return f"+{int(ms)}ms"
+    if ms < 60_000:
+        return f"+{ms/1000:.1f}s"
+    m, s = int(ms // 60_000), int((ms % 60_000) // 1000)
+    return f"+{m}m {s:02d}s"
+
+
+def format_duration(ms) -> str:
+    if not _is_valid(ms) or ms <= 0:
+        return ""
+    if ms < 60_000:
+        return f"{ms/1000:.1f}s"
+    if ms < 3_600_000:
+        m, s = int(ms // 60_000), int((ms % 60_000) // 1000)
+        return f"{m}m {s:02d}s"
+    h, m = int(ms // 3_600_000), int((ms % 3_600_000) // 60_000)
+    return f"{h}h {m}m"
+
+
+def summarize_event(row: pd.Series, max_len: int = 150) -> str:
+    msg_type = str(row.get("message_type", ""))
+    content = str(row.get("message_content", "") or "").replace("\n", " ").strip()
+    tool = str(row.get("tool_name", "") or "")
+
+    if msg_type == "user":
+        text = f"User: {content}" if content else "User: (empty)"
+    elif msg_type == "assistant":
+        if tool:
+            text = f"Assistant calls: {tool}"
+        else:
+            text = f"Assistant: {content}" if content else "Assistant: (no content)"
+    elif msg_type == "tool_start":
+        args = ""
+        ti = str(row.get("tool_input", "") or "")
+        if ti and ti != "None":
+            try:
+                args = ", ".join(f"{k}=…" for k in list(json.loads(ti).keys())[:2])
+            except Exception:
+                args = "…"
+        text = f"⚡ {tool}({args})"
+    elif msg_type == "tool_result":
+        text = f"✓ {tool} completed"
+    elif msg_type == "session_start":
+        v = row.get("version", "")
+        text = f"Session started — v{v}" if _is_valid(v) else "Session started"
+    elif msg_type == "session_info":
+        text = content or "Session info"
+    elif msg_type == "session_error":
+        text = f"Error: {content}" if content else "Error"
+    elif msg_type == "turn_start":
+        text = "Turn started"
+    elif msg_type == "turn_end":
+        text = "Turn ended"
+    elif msg_type == "truncation":
+        tokens = row.get("input_tokens", "")
+        text = f"Truncation: {tokens} tokens" if _is_valid(tokens) else "Truncation"
+    elif msg_type == "reasoning":
+        text = f"Reasoning: {content}" if content else "Reasoning"
+    else:
+        text = content or msg_type
+
+    return text[:max_len] + "…" if len(text) > max_len else text
+
+
+# ── CSS ─────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-/* Event row styling */
-.event-row {
-    display: grid;
-    grid-template-columns: 140px 1fr;
-    gap: 12px;
-    padding: 10px 16px;
-    border-bottom: 1px solid #1e293b;
+.event-card {
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
     cursor: pointer;
-    transition: background 0.15s;
+    border-radius: 6px;
+    margin-bottom: 2px;
+    transition: background 0.12s;
 }
-.event-row:hover {
-    background: #1e293b;
-}
-.event-row.selected {
-    background: #1e3a5f;
+.event-card:hover { background: rgba(255,255,255,0.04); }
+.event-card.selected {
+    background: rgba(59,130,246,0.15);
     border-left: 3px solid #3b82f6;
 }
 .event-time {
-    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-family: 'SF Mono','Fira Code',monospace;
     font-size: 12px;
-    line-height: 1.4;
-    color: #e2e8f0;
+    color: #94a3b8;
+    margin-bottom: 4px;
 }
-.event-time .delta {
-    color: #64748b;
-    font-size: 11px;
-}
-.event-time .offset {
-    color: #475569;
-    font-size: 11px;
-}
+.event-time .delta { color: #64748b; font-size: 11px; margin-left: 8px; }
+.event-time .offset { color: #475569; font-size: 11px; margin-left: 8px; }
 .event-summary {
-    font-size: 14px;
-    line-height: 1.5;
+    font-size: 13px;
     color: #cbd5e1;
+    margin-top: 4px;
+    line-height: 1.4;
     word-break: break-word;
 }
 .detail-label {
@@ -250,6 +193,7 @@ st.markdown("""
     letter-spacing: 0.05em;
     color: #64748b;
     margin-bottom: 4px;
+    margin-top: 12px;
 }
 .detail-content {
     font-size: 14px;
@@ -259,44 +203,55 @@ st.markdown("""
 }
 .stats-bar {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
-    padding: 8px 16px;
+    padding: 6px 0;
     font-size: 13px;
-    border-bottom: 1px solid #1e293b;
     color: #94a3b8;
+    margin-bottom: 8px;
 }
-.stats-bar strong {
-    color: #e2e8f0;
-}
+.stats-bar strong { color: #e2e8f0; }
 .day-sep {
-    padding: 6px 16px;
+    padding: 4px 0;
     font-size: 12px;
     font-weight: 600;
     color: #64748b;
-    background: #0f172a;
-    border-bottom: 1px solid #1e293b;
+    margin-top: 8px;
 }
+.session-card {
+    padding: 8px 12px;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    cursor: pointer;
+}
+.session-card:hover { background: rgba(255,255,255,0.04); }
 </style>
 """, unsafe_allow_html=True)
 
+
 # ═══════════════════════════════════════════════════════════════════════════
-# PHASE 1: Source & session selection
+# SIDEBAR: Source & project filter
 # ═══════════════════════════════════════════════════════════════════════════
 
 st.sidebar.header("📋 Session Browser")
 
-# Source selection
 source_choice = st.sidebar.radio(
     "Data source",
-    ["Claude (~/.claude)", "Copilot (~/.copilot)", "Both"],
+    ["Claude", "Copilot", "Both"],
     index=0,
+    horizontal=True,
 )
 
+# Reset session selection when source changes
+if st.session_state.get("_prev_source") != source_choice:
+    st.session_state["_prev_source"] = source_choice
+    st.session_state["selected_event_idx"] = None
+
 paths_to_load = []
-if source_choice == "Claude (~/.claude)" or source_choice == "Both":
+if source_choice in ("Claude", "Both"):
     paths_to_load.append(claude_path)
-if source_choice == "Copilot (~/.copilot)" or source_choice == "Both":
+if source_choice in ("Copilot", "Both"):
     paths_to_load.append(copilot_path)
 
 # Load session index
@@ -314,15 +269,26 @@ if not all_sessions:
 
 sessions_df = pd.concat(all_sessions, ignore_index=True).sort_values("first_ts", ascending=False)
 
-# ── Sidebar: filter sessions ────────────────────────────────────────────
+# ── Sidebar: project filter (trimmed names) ─────────────────────────────
 st.sidebar.divider()
-st.sidebar.subheader("Filter Sessions")
 
-projects = sorted(sessions_df["project_path"].dropna().unique())
-if projects:
-    selected_project = st.sidebar.selectbox("Project", ["All"] + projects)
-    if selected_project != "All":
-        sessions_df = sessions_df[sessions_df["project_path"] == selected_project]
+# Build trimmed project names
+raw_projects = sorted(sessions_df["project_path"].dropna().unique())
+project_short_map = {}  # short_name → full_path
+for fp in raw_projects:
+    short = str(fp).split("/")[-1] if "/" in str(fp) else str(fp)
+    # Handle duplicates by adding parent
+    if short in project_short_map and project_short_map[short] != fp:
+        parts = str(fp).rsplit("/", 2)
+        short = "/".join(parts[-2:]) if len(parts) >= 2 else short
+    project_short_map[short] = fp
+
+project_options = ["All projects"] + list(project_short_map.keys())
+selected_project_short = st.sidebar.selectbox("Project", project_options)
+
+if selected_project_short != "All projects":
+    full_project_path = project_short_map[selected_project_short]
+    sessions_df = sessions_df[sessions_df["project_path"] == full_project_path]
 
 max_events = sessions_df["event_count"].max()
 max_events = int(max_events) if _is_valid(max_events) else 1
@@ -330,35 +296,100 @@ min_events = st.sidebar.slider("Min events", 0, max(max_events, 1), 0)
 if min_events > 0:
     sessions_df = sessions_df[sessions_df["event_count"] >= min_events]
 
-# ── Session picker ──────────────────────────────────────────────────────
+# ── Sidebar: truncation controls ────────────────────────────────────────
 st.sidebar.divider()
-st.sidebar.subheader(f"Sessions ({len(sessions_df)})")
+truncate_content = st.sidebar.checkbox("Truncate long strings", value=True)
 
-session_labels = []
-session_map = {}
-for _, row in sessions_df.iterrows():
-    proj = row["project_path"] or "unknown"
-    proj_short = proj.split("/")[-1] if "/" in str(proj) else proj
-    ts_val = row["first_ts"]
-    ts = str(ts_val)[:16] if _is_valid(ts_val) else "?"
-    label = f"{proj_short} — {row['event_count']} events — {ts}"
-    session_labels.append(label)
-    session_map[label] = (row["session_id"], row["_path"], row["source"])
-
-if not session_labels:
+if sessions_df.empty:
     st.info("No sessions match filters.")
     st.stop()
 
-selected_session_label = st.sidebar.radio(
-    "Pick a session",
-    session_labels,
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MAIN AREA — Session selector (above timeline)
+# ═══════════════════════════════════════════════════════════════════════════
+
+st.markdown("### Select Session")
+
+# Search bar for sessions
+session_search = st.text_input(
+    "🔍 Search sessions",
+    placeholder="Search by project, message, session ID…",
     label_visibility="collapsed",
 )
 
-session_id, source_path, session_source = session_map[selected_session_label]
+# Filter sessions by search
+if session_search:
+    q = session_search.lower()
+    mask = (
+        sessions_df["project_path"].fillna("").str.lower().str.contains(q, na=False) |
+        sessions_df["session_id"].fillna("").str.lower().str.contains(q, na=False) |
+        sessions_df["first_user_message"].fillna("").str.lower().str.contains(q, na=False)
+    )
+    filtered_sessions = sessions_df[mask]
+else:
+    filtered_sessions = sessions_df
+
+# Build session options for selectbox
+session_options = []
+session_id_map = {}  # label → (session_id, path, source)
+for _, row in filtered_sessions.iterrows():
+    proj = str(row["project_path"] or "").split("/")[-1] or "unknown"
+    ts_val = row["first_ts"]
+    ts_str = str(ts_val)[:16] if _is_valid(ts_val) else "?"
+    events = int(row["event_count"]) if _is_valid(row["event_count"]) else 0
+    src = str(row.get("source", ""))
+
+    # First user message preview
+    first_msg = str(row.get("first_user_message", "") or "").replace("\n", " ").strip()
+    if not first_msg or first_msg in ("None", "nan"):
+        first_msg = "(no user message)"
+    first_msg = first_msg[:80] + "…" if len(first_msg) > 80 else first_msg
+
+    label = f"[{src}] {proj} — {events} events — {ts_str} — {first_msg}"
+    session_options.append(label)
+    session_id_map[label] = (row["session_id"], row["_path"], row["source"])
+
+if not session_options:
+    st.info("No sessions match search.")
+    st.stop()
+
+selected_label = st.selectbox(
+    "Session",
+    session_options,
+    key=f"session_select_{source_choice}",
+    label_visibility="collapsed",
+)
+
+session_id, source_path, session_source = session_id_map[selected_label]
+
+# Session metadata (collapsible)
+sel_row = filtered_sessions[filtered_sessions["session_id"] == session_id].iloc[0]
+with st.expander("Session Metadata", expanded=False):
+    meta_cols = st.columns(3)
+    with meta_cols[0]:
+        st.markdown(f"**Source:** {sel_row.get('source', '')}")
+        st.markdown(f"**Session ID:** `{session_id}`")
+        proj_full = sel_row.get("project_path", "")
+        st.markdown(f"**Project:** `{proj_full}`")
+    with meta_cols[1]:
+        st.markdown(f"**First seen:** {sel_row.get('first_ts', '')}")
+        st.markdown(f"**Last seen:** {sel_row.get('last_ts', '')}")
+        slug = sel_row.get("slug", "")
+        if _is_valid(slug):
+            st.markdown(f"**Slug:** {slug}")
+    with meta_cols[2]:
+        ec = sel_row.get("event_count", 0)
+        tc = sel_row.get("tool_calls", 0)
+        it = sel_row.get("total_input_tokens", 0)
+        ot = sel_row.get("total_output_tokens", 0)
+        st.markdown(f"**Events:** {ec}")
+        st.markdown(f"**Tool calls:** {tc}")
+        st.markdown(f"**Tokens:** {it:,} in / {ot:,} out")
+
 
 # ═══════════════════════════════════════════════════════════════════════════
-# PHASE 2: Session timeline (Chronicle-style)
+# PHASE 2: Event timeline
 # ═══════════════════════════════════════════════════════════════════════════
 
 events_df = load_session_events(source_path, session_id)
@@ -371,178 +402,166 @@ if events_df.empty:
 events_df["_ts"] = events_df["timestamp"].apply(parse_ts)
 
 # Calculate deltas
-deltas_ms = []
 valid_ts = events_df["_ts"].apply(_is_valid)
 first_ts = events_df.loc[valid_ts, "_ts"].iloc[0] if valid_ts.any() else None
-for i, row in events_df.iterrows():
+deltas, offsets = [], []
+prev = None
+for _, row in events_df.iterrows():
     ts = row["_ts"]
-    if not _is_valid(ts) or not _is_valid(first_ts):
-        deltas_ms.append(None)
-        continue
-    if i == events_df.index[0]:
-        deltas_ms.append(0)
-    else:
-        prev_ts = events_df.loc[events_df.index[events_df.index.get_loc(i) - 1], "_ts"]
-        if _is_valid(prev_ts):
-            deltas_ms.append((ts - prev_ts).total_seconds() * 1000)
+    if _is_valid(ts) and _is_valid(first_ts):
+        offsets.append((ts - first_ts).total_seconds() * 1000)
+        if prev is not None:
+            deltas.append((ts - prev).total_seconds() * 1000)
         else:
-            deltas_ms.append(None)
+            deltas.append(0)
+        prev = ts
+    else:
+        deltas.append(None)
+        offsets.append(None)
 
-events_df["_delta_ms"] = deltas_ms
-events_df["_offset_ms"] = events_df["_ts"].apply(
-    lambda t: (t - first_ts).total_seconds() * 1000 if _is_valid(t) and _is_valid(first_ts) else None
-)
+events_df["_delta_ms"] = deltas
+events_df["_offset_ms"] = offsets
 
-# ── Top filter bar (Chronicle-style) ────────────────────────────────────
+# ── Filter bar ──────────────────────────────────────────────────────────
+st.markdown("---")
 st.markdown("### Session Timeline")
 
-filter_cols = st.columns([2, 3, 2, 2, 1])
-
-with filter_cols[0]:
-    search_query = st.text_input("🔍 Search", "", placeholder="message, tool name…",
-                                  label_visibility="collapsed")
-
+fc = st.columns([3, 3, 2, 2])
+with fc[0]:
+    search_q = st.text_input("🔍 Search events", "", placeholder="message, tool name…",
+                              label_visibility="collapsed")
 all_types = sorted(events_df["message_type"].dropna().unique())
-with filter_cols[1]:
-    type_filter = st.selectbox("Type", ["All"] + all_types, label_visibility="collapsed")
-
-with filter_cols[2]:
+with fc[1]:
+    type_filter = st.selectbox("Type filter", ["All"] + list(all_types), label_visibility="collapsed")
+with fc[2]:
     hide_noise = st.checkbox("Hide turn/truncation", value=False)
-
-with filter_cols[3]:
-    truncate_content = st.checkbox("Truncate long strings", value=True)
-
-with filter_cols[4]:
-    if st.button("Clear"):
-        # Rerun to reset
+with fc[3]:
+    if st.button("✕ Clear"):
         st.rerun()
 
 # Apply filters
-filtered_df = events_df.copy()
+filt = events_df.copy()
 if type_filter != "All":
-    filtered_df = filtered_df[filtered_df["message_type"] == type_filter]
+    filt = filt[filt["message_type"] == type_filter]
 if hide_noise:
-    noise_types = {"turn_start", "turn_end", "truncation", "compaction_start", "compaction_complete"}
-    filtered_df = filtered_df[~filtered_df["message_type"].isin(noise_types)]
-if search_query:
-    q = search_query.lower()
+    filt = filt[~filt["message_type"].isin({"turn_start", "turn_end", "truncation", "compaction_start", "compaction_complete"})]
+if search_q:
+    q = search_q.lower()
     mask = (
-        filtered_df["message_content"].fillna("").str.lower().str.contains(q, na=False) |
-        filtered_df["tool_name"].fillna("").str.lower().str.contains(q, na=False) |
-        filtered_df["message_type"].fillna("").str.lower().str.contains(q, na=False)
+        filt["message_content"].fillna("").str.lower().str.contains(q, na=False) |
+        filt["tool_name"].fillna("").str.lower().str.contains(q, na=False) |
+        filt["message_type"].fillna("").str.lower().str.contains(q, na=False)
     )
-    filtered_df = filtered_df[mask]
+    filt = filt[mask]
 
-# ── Stats bar ───────────────────────────────────────────────────────────
-valid_ts_mask = events_df["_ts"].apply(_is_valid)
-last_ts = events_df.loc[valid_ts_mask, "_ts"].iloc[-1] if valid_ts_mask.any() else None
+# Stats bar
+last_ts = events_df.loc[valid_ts, "_ts"].iloc[-1] if valid_ts.any() else None
 try:
-    duration_ms = (last_ts - first_ts).total_seconds() * 1000 if _is_valid(first_ts) and _is_valid(last_ts) else 0
+    dur = (last_ts - first_ts).total_seconds() * 1000 if _is_valid(first_ts) and _is_valid(last_ts) else 0
 except Exception:
-    duration_ms = 0
+    dur = 0
 
 st.markdown(
     f'<div class="stats-bar">'
-    f'<span><strong>{len(filtered_df)}</strong> showing / <strong>{len(events_df)}</strong> events</span>'
-    f'<span>Duration: {format_duration(duration_ms)}</span>'
+    f'<span><strong>{len(filt)}</strong> showing / <strong>{len(events_df)}</strong> events</span>'
+    f'<span>Duration: {format_duration(dur)}</span>'
     f'</div>',
     unsafe_allow_html=True,
 )
 
-# ── Two-column layout: event list + detail panel ────────────────────────
+# ── Two-column: event list + detail ─────────────────────────────────────
 col_list, col_detail = st.columns([3, 2])
 
-# Use session state to track selected event
 if "selected_event_idx" not in st.session_state:
     st.session_state["selected_event_idx"] = None
 
-# Helper to safely get delta value
-def _safe_delta(val):
-    if val is None:
-        return None
-    try:
-        if pd.isna(val):
-            return None
-    except (TypeError, ValueError):
-        pass
-    return val
-
 with col_list:
-    # Build a display dataframe for the event list
-    display_rows = []
-    for idx, row in filtered_df.iterrows():
-        ts = row["_ts"]
-        ts_str = ts.strftime("%H:%M:%S") if _is_valid(ts) else "—"
-        delta_val = _safe_delta(row.get("_delta_ms"))
-        delta_str = format_delta_ms(delta_val) if delta_val else ""
-        msg_type = row.get("message_type", "")
-        summary = summarize_event(row)
-        display_rows.append({
-            "_idx": idx,
-            "Time": ts_str,
-            "Delta": delta_str,
-            "Type": msg_type,
-            "Summary": summary[:150],
-        })
-
-    if not display_rows:
+    if filt.empty:
         st.info("No events match filters.")
     else:
-        display_df = pd.DataFrame(display_rows)
+        # Render Chronicle-style event cards using buttons for click
+        current_day = None
+        for idx, row in filt.iterrows():
+            ts = row["_ts"]
 
-        # Render as interactive dataframe with row selection
-        event_selection = st.dataframe(
-            display_df[["Time", "Delta", "Type", "Summary"]],
-            width="stretch",
-            hide_index=True,
-            height=min(600, 35 * len(display_rows) + 38),
-            on_select="rerun",
-            selection_mode="single-row",
-        )
+            # Day separator
+            if _is_valid(ts):
+                day = ts.strftime("%Y-%m-%d")
+                if day != current_day:
+                    current_day = day
+                    st.markdown(f'<div class="day-sep">📅 {day}</div>', unsafe_allow_html=True)
 
-        # Handle selection
-        if event_selection and event_selection.selection and event_selection.selection.rows:
-            selected_row_num = event_selection.selection.rows[0]
-            if selected_row_num < len(display_rows):
-                st.session_state["selected_event_idx"] = display_rows[selected_row_num]["_idx"]
+            # Time info
+            ts_utc = ts.strftime("%H:%M:%S.") + ts.strftime("%f")[:3] if _is_valid(ts) else "—"
+            delta_val = row.get("_delta_ms")
+            delta_s = format_delta(delta_val) if _is_valid(delta_val) else ""
+            offset_val = row.get("_offset_ms")
+            offset_s = f"t{format_delta(offset_val)}" if _is_valid(offset_val) else ""
+
+            msg_type = str(row.get("message_type", ""))
+            badge = badge_html(msg_type)
+            summary = html.escape(summarize_event(row, max_len=120))
+
+            is_selected = st.session_state.get("selected_event_idx") == idx
+            sel_class = "selected" if is_selected else ""
+
+            # Render card as HTML + a button to select
+            card_html = (
+                f'<div class="event-card {sel_class}">'
+                f'  <div class="event-time">'
+                f'    {ts_utc}'
+                f'    <span class="delta">{delta_s}</span>'
+                f'    <span class="offset">{offset_s}</span>'
+                f'  </div>'
+                f'  <div>{badge}</div>'
+                f'  <div class="event-summary">{summary}</div>'
+                f'</div>'
+            )
+            st.markdown(card_html, unsafe_allow_html=True)
+
+            if st.button("Select", key=f"sel_{idx}", use_container_width=True,
+                         type="primary" if is_selected else "secondary"):
+                st.session_state["selected_event_idx"] = idx
+                st.rerun()
 
 
-# ── Detail panel (right column) ─────────────────────────────────────────
+# ── Detail panel ────────────────────────────────────────────────────────
 with col_detail:
     sel_idx = st.session_state.get("selected_event_idx")
 
-    if sel_idx is not None and sel_idx in filtered_df.index:
-        event = filtered_df.loc[sel_idx]
-        msg_type = event.get("message_type", "")
+    if sel_idx is not None and sel_idx in filt.index:
+        event = filt.loc[sel_idx]
+        msg_type = str(event.get("message_type", ""))
 
         st.markdown(f"### {badge_html(msg_type)}", unsafe_allow_html=True)
 
-        # ── Formatted content view ──────────────────────────────────────
         content = str(event.get("message_content", "") or "")
         tool = str(event.get("tool_name", "") or "")
         tool_input_str = str(event.get("tool_input", "") or "")
+        max_display = 2000 if truncate_content else 50000
 
+        # Type-specific rendering
         if msg_type == "user":
-            st.markdown(f'<div class="detail-label">USER MESSAGE</div>', unsafe_allow_html=True)
-            display = content[:2000] + "…" if truncate_content and len(content) > 2000 else content
-            st.markdown(f'<div class="detail-content">{display}</div>', unsafe_allow_html=True)
+            st.markdown('<div class="detail-label">USER MESSAGE</div>', unsafe_allow_html=True)
+            display = content[:max_display] + "…" if len(content) > max_display else content
+            st.markdown(f'<div class="detail-content">{html.escape(display)}</div>', unsafe_allow_html=True)
 
         elif msg_type == "assistant":
             if tool:
-                st.markdown(f'<div class="detail-label">TOOL CALL</div>', unsafe_allow_html=True)
-                st.code(f"{tool}", language=None)
-                if tool_input_str and tool_input_str != "None":
+                st.markdown('<div class="detail-label">TOOL CALL</div>', unsafe_allow_html=True)
+                st.code(tool, language=None)
+                if tool_input_str and tool_input_str not in ("None", ""):
                     try:
-                        parsed_input = json.loads(tool_input_str)
-                        display_input = json.dumps(parsed_input, indent=2)
-                        if truncate_content and len(display_input) > 2000:
-                            display_input = display_input[:2000] + "\n…[truncated]"
-                        st.code(display_input, language="json")
+                        parsed = json.loads(tool_input_str)
+                        disp = json.dumps(parsed, indent=2)
+                        if len(disp) > max_display:
+                            disp = disp[:max_display] + "\n…[truncated]"
+                        st.code(disp, language="json")
                     except (json.JSONDecodeError, TypeError):
                         st.code(tool_input_str[:500], language=None)
             if content:
-                st.markdown(f'<div class="detail-label">RESPONSE</div>', unsafe_allow_html=True)
-                display = content[:2000] + "…" if truncate_content and len(content) > 2000 else content
+                st.markdown('<div class="detail-label">RESPONSE</div>', unsafe_allow_html=True)
+                display = content[:max_display] + "…" if len(content) > max_display else content
                 st.text(display)
 
         elif msg_type in ("tool_start", "tool_result"):
@@ -550,35 +569,33 @@ with col_detail:
             st.markdown(f'<div class="detail-label">{label}</div>', unsafe_allow_html=True)
             if tool:
                 st.code(tool, language=None)
-            if tool_input_str and tool_input_str != "None":
+            if tool_input_str and tool_input_str not in ("None", ""):
                 try:
-                    parsed_input = json.loads(tool_input_str)
-                    st.code(json.dumps(parsed_input, indent=2)[:2000], language="json")
+                    parsed = json.loads(tool_input_str)
+                    st.code(json.dumps(parsed, indent=2)[:max_display], language="json")
                 except (json.JSONDecodeError, TypeError):
                     st.code(tool_input_str[:500], language=None)
             if content:
-                display = content[:2000] + "…" if truncate_content and len(content) > 2000 else content
-                st.text(display)
+                st.text(content[:max_display])
 
         elif msg_type in ("session_start", "session_info", "session_error", "session_resume"):
-            st.markdown(f'<div class="detail-label">SESSION EVENT</div>', unsafe_allow_html=True)
+            st.markdown('<div class="detail-label">SESSION EVENT</div>', unsafe_allow_html=True)
             if content:
                 st.text(content[:1000])
 
         elif msg_type in ("system", "summary", "reasoning"):
             st.markdown(f'<div class="detail-label">{msg_type.upper()}</div>', unsafe_allow_html=True)
-            display = content[:2000] + "…" if truncate_content and len(content) > 2000 else content
-            st.text(display)
+            st.text(content[:max_display] if content else "")
 
         else:
             if content:
-                st.markdown(f'<div class="detail-label">{msg_type.upper()}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="detail-label">{html.escape(msg_type).upper()}</div>', unsafe_allow_html=True)
                 st.text(content[:1000])
 
-        # ── Metadata ────────────────────────────────────────────────────
+        # Metadata
         st.divider()
-        st.markdown(f'<div class="detail-label">METADATA</div>', unsafe_allow_html=True)
-        meta_fields = [
+        st.markdown('<div class="detail-label">METADATA</div>', unsafe_allow_html=True)
+        for label, col_name in [
             ("UUID", "uuid"), ("Parent UUID", "parent_uuid"),
             ("Timestamp", "timestamp"), ("Model", "model"),
             ("Tool", "tool_name"), ("Tool Use ID", "tool_use_id"),
@@ -586,13 +603,12 @@ with col_detail:
             ("Cache Creation", "cache_creation_tokens"), ("Cache Read", "cache_read_tokens"),
             ("Stop Reason", "stop_reason"), ("Git Branch", "git_branch"),
             ("CWD", "cwd"), ("Version", "version"),
-        ]
-        for label, col_name in meta_fields:
+        ]:
             val = event.get(col_name)
             if _is_valid(val) and str(val) not in ("nan", "None", "", "<NA>"):
                 st.text(f"{label}: {val}")
 
-        # ── Raw JSON ────────────────────────────────────────────────────
+        # Raw JSON
         with st.expander("Raw JSON"):
             raw = {}
             for col_name in event.index:
@@ -607,9 +623,9 @@ with col_detail:
                             raw[col_name] = str(v)
                     else:
                         raw[col_name] = str(v) if not isinstance(v, (int, float, bool)) else v
-            display_json = json.dumps(raw, indent=2, default=str)
-            if truncate_content and len(display_json) > 5000:
-                display_json = display_json[:5000] + "\n…[truncated]"
-            st.code(display_json, language="json")
+            disp_json = json.dumps(raw, indent=2, default=str)
+            if truncate_content and len(disp_json) > 5000:
+                disp_json = disp_json[:5000] + "\n…[truncated]"
+            st.code(disp_json, language="json")
     else:
-        st.info("← Select an event from the timeline to see details")
+        st.info("← Click **Select** on an event to see details")

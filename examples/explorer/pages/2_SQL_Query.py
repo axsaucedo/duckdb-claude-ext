@@ -130,22 +130,28 @@ ORDER BY messages DESC""",
 }
 
 # ---------------------------------------------------------------------------
-# Sidebar: sample queries and query builder
+# Session state for persistent query text
+# ---------------------------------------------------------------------------
+if "sql_query_text" not in st.session_state:
+    st.session_state["sql_query_text"] = "SELECT * FROM read_conversations() LIMIT 10"
+if "sql_auto_run" not in st.session_state:
+    st.session_state["sql_auto_run"] = False
+
+# ---------------------------------------------------------------------------
+# Sidebar: sample queries (category → buttons) and query builder
 # ---------------------------------------------------------------------------
 st.sidebar.header("Sample Queries")
 
-selected_category = st.sidebar.selectbox(
-    "Category", list(SAMPLE_QUERIES.keys())
-)
-category_queries = SAMPLE_QUERIES[selected_category]
-selected_sample = st.sidebar.selectbox(
-    "Query", ["(none)"] + list(category_queries.keys())
-)
+categories = ["Select…"] + list(SAMPLE_QUERIES.keys())
+selected_category = st.sidebar.selectbox("Category", categories, index=0)
 
-if selected_sample != "(none)":
-    sample_sql = category_queries[selected_sample]
-else:
-    sample_sql = None
+if selected_category != "Select…":
+    st.sidebar.markdown("**Click a query to load it:**")
+    for query_name, query_sql in SAMPLE_QUERIES[selected_category].items():
+        if st.sidebar.button(query_name, key=f"sample_{query_name}", use_container_width=True):
+            st.session_state["sql_query_text"] = query_sql
+            st.session_state["sql_auto_run"] = True
+            st.rerun()
 
 st.sidebar.divider()
 st.sidebar.header("Query Builder")
@@ -188,14 +194,7 @@ where_clause = st.sidebar.text_input("WHERE clause (optional)", "")
 order_by = st.sidebar.text_input("ORDER BY (optional)", "")
 limit_val = st.sidebar.number_input("LIMIT", min_value=0, max_value=10000, value=100)
 
-build_query = st.sidebar.button("Build Query")
-
-# ---------------------------------------------------------------------------
-# Main: SQL editor and results
-# ---------------------------------------------------------------------------
-
-# Determine initial query
-if build_query:
+if st.sidebar.button("Replace & Run", type="primary", use_container_width=True):
     cols = ", ".join(selected_columns) if selected_columns else "*"
     built_sql = f"SELECT {cols}\nFROM {selected_table}"
     if where_clause:
@@ -204,31 +203,40 @@ if build_query:
         built_sql += f"\nORDER BY {order_by}"
     if limit_val > 0:
         built_sql += f"\nLIMIT {limit_val}"
-    default_sql = built_sql
-elif sample_sql:
-    default_sql = sample_sql
-else:
-    default_sql = "SELECT * FROM read_conversations() LIMIT 10"
+    st.session_state["sql_query_text"] = built_sql
+    st.session_state["sql_auto_run"] = True
+    st.rerun()
+
+# ---------------------------------------------------------------------------
+# Main: SQL editor and results
+# ---------------------------------------------------------------------------
 
 sql_input = st.text_area(
     "SQL Query",
-    value=default_sql,
+    value=st.session_state["sql_query_text"],
     height=200,
+    key="sql_editor",
     help="Write any SQL query using agent_data functions. Results are displayed below.",
 )
+
+# Keep session state in sync with text area edits
+if sql_input != st.session_state["sql_query_text"]:
+    st.session_state["sql_query_text"] = sql_input
 
 col1, col2 = st.columns([1, 5])
 with col1:
     run_btn = st.button("▶ Run", type="primary")
 
-if run_btn and sql_input.strip():
+should_run = run_btn or st.session_state.get("sql_auto_run", False)
+st.session_state["sql_auto_run"] = False
+
+if should_run and st.session_state["sql_query_text"].strip():
     try:
         with st.spinner("Executing query..."):
-            result_df = run_query(sql_input)
+            result_df = run_query(st.session_state["sql_query_text"])
         st.success(f"✅ {len(result_df)} rows returned")
         st.dataframe(result_df, use_container_width=True, hide_index=True)
 
-        # Download button
         csv = result_df.to_csv(index=False)
         st.download_button(
             "📥 Download CSV",

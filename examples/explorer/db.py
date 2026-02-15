@@ -38,29 +38,44 @@ def _safe_query(sql: str) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=120, show_spinner="Loading sessions…")
-def load_session_index(_path: str) -> pd.DataFrame:
-    """Load session summary index from a single path."""
+def load_session_index(path: str) -> pd.DataFrame:
+    """Load session summary index with first user message."""
     return _safe_query(f"""
-        SELECT
-            source,
-            session_id,
-            project_path,
-            slug,
-            MIN(timestamp) AS first_ts,
-            MAX(timestamp) AS last_ts,
-            COUNT(*) AS event_count,
-            SUM(CASE WHEN tool_name IS NOT NULL THEN 1 ELSE 0 END) AS tool_calls,
-            SUM(COALESCE(input_tokens, 0)) AS total_input_tokens,
-            SUM(COALESCE(output_tokens, 0)) AS total_output_tokens
-        FROM read_conversations(path='{_path}')
-        WHERE message_type != '_parse_error'
-        GROUP BY source, session_id, project_path, slug
-        ORDER BY first_ts DESC
+        WITH sessions AS (
+            SELECT
+                source,
+                session_id,
+                project_path,
+                slug,
+                MIN(timestamp) AS first_ts,
+                MAX(timestamp) AS last_ts,
+                COUNT(*) AS event_count,
+                SUM(CASE WHEN tool_name IS NOT NULL THEN 1 ELSE 0 END) AS tool_calls,
+                SUM(COALESCE(input_tokens, 0)) AS total_input_tokens,
+                SUM(COALESCE(output_tokens, 0)) AS total_output_tokens
+            FROM read_conversations(path='{path}')
+            WHERE message_type != '_parse_error'
+            GROUP BY source, session_id, project_path, slug
+        ),
+        first_msgs AS (
+            SELECT session_id,
+                   message_content AS first_user_message,
+                   ROW_NUMBER() OVER (PARTITION BY session_id ORDER BY line_number) AS rn
+            FROM read_conversations(path='{path}')
+            WHERE message_type = 'user'
+              AND message_content IS NOT NULL
+              AND message_content NOT LIKE '<local-command%'
+              AND message_content NOT LIKE '<command-name>%'
+        )
+        SELECT s.*, LEFT(fm.first_user_message, 200) AS first_user_message
+        FROM sessions s
+        LEFT JOIN first_msgs fm ON s.session_id = fm.session_id AND fm.rn = 1
+        ORDER BY s.first_ts DESC
     """)
 
 
 @st.cache_data(ttl=120, show_spinner="Loading session events…")
-def load_session_events(_path: str, session_id: str) -> pd.DataFrame:
+def load_session_events(path: str, session_id: str) -> pd.DataFrame:
     """Load all events for a single session, ordered by line number."""
     return _safe_query(f"""
         SELECT
@@ -84,7 +99,7 @@ def load_session_events(_path: str, session_id: str) -> pd.DataFrame:
             git_branch,
             cwd,
             version
-        FROM read_conversations(path='{_path}')
+        FROM read_conversations(path='{path}')
         WHERE session_id = '{session_id}'
           AND message_type != '_parse_error'
         ORDER BY line_number
