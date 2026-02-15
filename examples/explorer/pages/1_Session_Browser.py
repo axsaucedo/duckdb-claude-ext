@@ -386,7 +386,6 @@ if not has_selection:
         display_df,
         use_container_width=True,
         hide_index=True,
-        height=212,  # ~5 rows
         selection_mode="single-row",
         on_select="rerun",
         column_config=col_config,
